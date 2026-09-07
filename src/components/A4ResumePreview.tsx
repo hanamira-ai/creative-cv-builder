@@ -92,12 +92,38 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
   };
 
   const getSkillPercent = (level: string) => {
-    switch (level) {
-      case 'Mahir': return 95;
-      case 'Menengah': return 75;
-      case 'Dasar': return 50;
+    switch (level?.toLowerCase()) {
+      case 'mahir':
+      case 'expert':
+      case 'advanced': return 95;
+      case 'menengah':
+      case 'intermediate': return 75;
+      case 'dasar':
+      case 'beginner':
+      case 'basic': return 50;
       default: return 70;
     }
+  };
+
+  const isEn = data.language === 'en';
+  const labels = {
+    contact: isEn ? 'Contact' : 'Kontak',
+    coreSkills: isEn ? 'Core Skills' : 'Keahlian Inti',
+    techStack: isEn ? 'Tech Stack' : 'Tech Stack',
+    techStackCont: isEn ? 'Tech Stack (Continued)' : 'Tech Stack (Lanjutan)',
+    languages: isEn ? 'Languages' : 'Bahasa',
+    certifications: isEn ? 'Certifications' : 'Sertifikasi',
+    continuedQual: isEn ? 'Continued Qualifications' : 'Kualifikasi Lanjutan',
+    summary: isEn ? 'Professional Summary' : 'Ringkasan Profesional',
+    workExp: isEn ? 'Work Experience' : 'Pengalaman Kerja',
+    workExpCont: isEn ? '(Continued)' : '(Lanjutan)',
+    portfolio: isEn ? 'Digital Portfolio & Projects' : 'Portofolio Digital & Proyek',
+    education: isEn ? 'Education' : 'Pendidikan Formal',
+    references: isEn ? 'Professional References' : 'Referensi Profesional',
+    sheetOf: (p: number, t: number) => isEn ? `Sheet ${p} of ${t}` : `Lembar ${p} dari ${t}`,
+    pageOf: (p: number, t: number) => isEn ? `Page ${p} of ${t}` : `Halaman ${p} dari ${t}`,
+    sheetBadge: (p: number, t: number) => isEn ? `Page ${p} / ${t}` : `Lembar ${p} / ${t}`,
+    pageBreak: (p: number, n: number) => isEn ? `✂ A4 Page Break (Sheet ${p} ➔ Sheet ${n})` : `✂ Batas Halaman A4 (Lembar ${p} ➔ Lembar ${n})`
   };
 
   // Partisi data ke dalam halaman-halaman A4
@@ -350,7 +376,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                           {data.personal_info.name}
                         </div>
                         <div className="text-[7pt] truncate" style={{ color: currentTheme.vars.accent }}>
-                          Kualifikasi Lanjutan
+                          {labels.continuedQual}
                         </div>
                       </div>
                     </div>
@@ -364,7 +390,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                         style={{ color: sidebarConfig.headingColor, borderBottomColor: currentTheme.vars.accent }}
                       >
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: currentTheme.vars.accent }}></span>
-                        Kontak
+                        {labels.contact}
                       </h3>
                       <div className={`space-y-1 ${densityStyles.bodyTextSize}`} style={{ color: sidebarConfig.textMain }}>
                         {data.personal_info.contact.phone && (
@@ -413,7 +439,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                         style={{ color: sidebarConfig.headingColor, borderBottomColor: currentTheme.vars.accent }}
                       >
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: currentTheme.vars.accent }}></span>
-                        Keahlian Inti
+                        {labels.coreSkills}
                       </h3>
                       <div className="space-y-1.5">
                         {page.sidebar.coreSkills.map((skill, idx) => (
@@ -453,7 +479,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                         style={{ color: sidebarConfig.headingColor, borderBottomColor: currentTheme.vars.accent }}
                       >
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: currentTheme.vars.accent }}></span>
-                        Tech Stack {page.pageNumber > 1 ? '(Lanjutan)' : ''}
+                        {page.pageNumber > 1 ? labels.techStackCont : labels.techStack}
                       </h3>
                       <div className="space-y-1.5">
                         {page.sidebar.techStack.map((item, idx) => (
@@ -498,7 +524,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                         style={{ color: sidebarConfig.headingColor, borderBottomColor: currentTheme.vars.accent }}
                       >
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: currentTheme.vars.accent }}></span>
-                        Bahasa
+                        {labels.languages}
                       </h3>
                       <div className="space-y-1">
                         {page.sidebar.languages.map((lang, idx) => (
@@ -519,7 +545,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                         style={{ color: sidebarConfig.headingColor, borderBottomColor: currentTheme.vars.accent }}
                       >
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: currentTheme.vars.accent }}></span>
-                        Sertifikasi
+                        {labels.certifications}
                       </h3>
                       <div className="space-y-1.5">
                         {page.sidebar.certifications.map((cert, idx) => (
@@ -577,7 +603,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                         className="text-[6.2pt] uppercase tracking-wider font-bold font-mono px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap"
                         style={{ backgroundColor: `${currentTheme.vars.accent}20`, color: currentTheme.vars.accent }}
                       >
-                        Lembar {page.pageNumber} / {page.totalPages}
+                        {labels.sheetBadge(page.pageNumber, page.totalPages)}
                       </span>
                     </div>
                   )}
@@ -587,7 +613,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                     <section className={`section-block ${densityStyles.itemSpacing}`}>
                       <h3 className={`section-header ${densityStyles.headingTextSize} font-bold uppercase tracking-wider flex items-center gap-1.5`}>
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--accent-gold)' }}></span>
-                        Ringkasan Profesional
+                        {labels.summary}
                       </h3>
                       <p className={`${densityStyles.bodyTextSize} text-slate-700 leading-relaxed text-justify`}>
                         {data.personal_info.summary}
@@ -600,7 +626,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                     <section className={`section-block ${densityStyles.itemSpacing}`}>
                       <h3 className={`section-header ${densityStyles.headingTextSize} font-bold uppercase tracking-wider flex items-center gap-1.5`}>
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--accent-gold)' }}></span>
-                        Pengalaman Kerja {page.main.workExperienceIsContinuation ? '(Lanjutan)' : ''}
+                        {labels.workExp} {page.main.workExperienceIsContinuation ? labels.workExpCont : ''}
                       </h3>
                       
                       {/* Timeline container */}
@@ -642,7 +668,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                     <section className={`section-block ${densityStyles.itemSpacing} break-inside-avoid`}>
                       <h3 className={`section-header ${densityStyles.headingTextSize} font-bold uppercase tracking-wider flex items-center gap-1.5`}>
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--accent-gold)' }}></span>
-                        Portofolio Digital & Proyek
+                        {labels.portfolio}
                       </h3>
                       <div className="space-y-1.5">
                         {page.main.digitalPortfolio.map((port, idx) => (
@@ -686,7 +712,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                     <section className={`section-block ${densityStyles.itemSpacing} break-inside-avoid`}>
                       <h3 className={`section-header ${densityStyles.headingTextSize} font-bold uppercase tracking-wider flex items-center gap-1.5`}>
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--accent-gold)' }}></span>
-                        Pendidikan Formal
+                        {labels.education}
                       </h3>
                       <div className="space-y-1">
                         {page.main.education.map((edu, idx) => (
@@ -710,7 +736,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                     <section className={`section-block ${densityStyles.itemSpacing} break-inside-avoid`}>
                       <h3 className={`section-header ${densityStyles.headingTextSize} font-bold uppercase tracking-wider flex items-center gap-1.5`}>
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--accent-gold)' }}></span>
-                        Referensi Profesional
+                        {labels.references}
                       </h3>
                       <div className="grid grid-cols-2 gap-2">
                         {page.main.references.map((ref, idx) => (
@@ -728,7 +754,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                   <footer className="page-footer mt-auto pt-1.5 border-t border-slate-100 flex justify-between items-center text-[7pt] text-slate-400 font-mono">
                     <span className="truncate">{data.personal_info.name} — Curriculum Vitae</span>
                     <span className="shrink-0 font-semibold" style={{ color: currentTheme.vars.accent }}>
-                      Halaman {page.pageNumber} dari {page.totalPages}
+                      {labels.pageOf(page.pageNumber, page.totalPages)}
                     </span>
                   </footer>
                 </main>
@@ -739,7 +765,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                 <div className="no-print my-5 flex items-center justify-center gap-3 w-[210mm] max-w-full text-xs text-slate-400 font-mono">
                   <div className="h-px bg-slate-700/80 flex-1"></div>
                   <div className="px-3.5 py-1 rounded-full bg-slate-800/90 border border-slate-700 text-amber-300 font-bold flex items-center gap-2 shadow-sm backdrop-blur-xs">
-                    <span>✂ Batas Halaman A4 (Lembar {page.pageNumber} ➔ Lembar {page.pageNumber + 1})</span>
+                    <span>{labels.pageBreak(page.pageNumber, page.pageNumber + 1)}</span>
                   </div>
                   <div className="h-px bg-slate-700/80 flex-1"></div>
                 </div>

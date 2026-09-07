@@ -25,7 +25,8 @@ import {
   Sun,
   Wand2,
   FileUp,
-  RotateCcw
+  RotateCcw,
+  Globe
 } from 'lucide-react';
 import { sampleGuruhWicaksonoCV } from './sampleData';
 import { validateCVJson } from './validator';
@@ -35,9 +36,10 @@ import { A4ResumePreview } from './components/A4ResumePreview';
 import { generateStandaloneCVHtml } from './templateHtmlGenerator';
 import { ExportEnginePanel } from './components/ExportEnginePanel';
 import { downloadPDF, exportToPdfClient } from './exportPdf';
-import { generateDocxBlob } from './exportDocx';
+import { generateAndDownloadDocx, generateDocxBlob, generateWordHtmlBlob } from './exportDocx';
 import { ProfilePhotoUploader } from './components/ProfilePhotoUploader';
 import { DocumentParserPanel } from './components/DocumentParserPanel';
+import { DocumentUploadCard } from './components/DocumentUploadCard';
 import { LayoutPageMode, SpacingDensity } from './paginationUtils';
 
 export default function App() {
@@ -102,18 +104,14 @@ export default function App() {
   const handleQuickDownloadDocx = async () => {
     try {
       setIsQuickExportingDocx(true);
-      const cleanName = currentCVData.personal_info.name.replace(/\s+/g, '_');
-      const blob = await generateDocxBlob(currentCVData, selectedThemeId);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `CV_${cleanName}_Word.docx`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      await generateAndDownloadDocx(
+        currentCVData,
+        selectedThemeId,
+        sidebarTheme === 'light' ? 'light' : 'dark',
+        badgeTheme === 'light' ? 'light' : 'dark'
+      );
     } catch (e) {
-      console.error(e);
+      console.error('Gagal mengunduh file DOCX:', e);
     } finally {
       setIsQuickExportingDocx(false);
     }
@@ -216,8 +214,8 @@ export default function App() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold text-white tracking-tight">AI CV Generator Engine A4</h1>
-                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <h1 className="text-base sm:text-lg font-bold text-white tracking-tight">creative-cv-builder</h1>
+                <span className="hidden">
                   Tahap 3: PDF & DOCX Export Ready
                 </span>
               </div>
@@ -227,11 +225,14 @@ export default function App() {
 
           {/* Quick Actions (Print & Instant Export) */}
           <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-            {/* Quick Trigger: Import Dokumen & Generate CV */}
+            {/* Quick Trigger: Import Dokumen & Generate CV (Hidden for clean UI) */}
             <button
               id="btn-nav-generate-cv"
-              onClick={() => setActiveTab('parser')}
-              className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 rounded-xl font-bold text-xs transition-all shadow-md shadow-amber-500/10 active:scale-95 cursor-pointer"
+              onClick={() => {
+                const el = document.getElementById('document-upload-section');
+                el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="hidden"
               title="Unggah berkas PDF, DOCX, atau Teks untuk di-generate otomatis dengan Gemini AI"
             >
               <Wand2 className="w-4 h-4 text-slate-950" />
@@ -294,8 +295,8 @@ export default function App() {
       <section id="control-toolbar" className="bg-slate-900 border-b border-slate-800 py-3 no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-4">
           
-          {/* Main Tabs */}
-          <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          {/* Main Tabs (Hidden for cleaner user experience) */}
+          <div className="hidden">
             <button
               id="tab-btn-preview"
               onClick={() => setActiveTab('preview')}
@@ -311,15 +312,24 @@ export default function App() {
 
             <button
               id="tab-btn-parser"
-              onClick={() => setActiveTab('parser')}
+              onClick={() => {
+                if (activeTab !== 'preview') {
+                  setActiveTab('preview');
+                }
+                setTimeout(() => {
+                  const el = document.getElementById('document-upload-section');
+                  el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 80);
+              }}
               className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'parser'
-                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                activeTab === 'preview'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30'
                   : 'text-slate-400 hover:text-white'
               }`}
+              title="Akses kolom unggah dokumen & generator CV di halaman utama"
             >
               <Wand2 className="w-3.5 h-3.5 text-amber-400" />
-              <span>Parser Dokumen (Generate CV)</span>
+              <span>Unggah Dokumen (Halaman 1)</span>
             </button>
 
             <button
@@ -512,6 +522,56 @@ export default function App() {
             </div>
           </div>
 
+          {/* CV Language Switcher */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+              <Globe className="w-3.5 h-3.5 text-amber-400" />
+              Bahasa CV:
+            </span>
+            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <button
+                onClick={() => {
+                  try {
+                    const parsed = JSON.parse(jsonInput);
+                    parsed.language = 'id';
+                    setJsonInput(JSON.stringify(parsed, null, 2));
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  (currentCVData.language || 'id') === 'id'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+                title="Sajikan CV dalam Bahasa Indonesia"
+              >
+                <span>🇮🇩</span>
+                <span>Indonesia</span>
+              </button>
+              <button
+                onClick={() => {
+                  try {
+                    const parsed = JSON.parse(jsonInput);
+                    parsed.language = 'en';
+                    setJsonInput(JSON.stringify(parsed, null, 2));
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  currentCVData.language === 'en'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+                title="Sajikan CV dalam English"
+              >
+                <span>🇬🇧</span>
+                <span>English</span>
+              </button>
+            </div>
+          </div>
+
           {/* Zoom controls for preview */}
           {activeTab === 'preview' && (
             <div className="flex items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800">
@@ -627,7 +687,10 @@ export default function App() {
 
               <div className="flex items-center gap-2.5">
                 <button
-                  onClick={() => setActiveTab('parser')}
+                  onClick={() => {
+                    const el = document.getElementById('document-upload-section');
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
                   className="text-xs text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1.5 cursor-pointer bg-amber-500/10 hover:bg-amber-500/20 px-3 py-1.5 rounded-xl border border-amber-500/30 transition-all shadow-sm"
                 >
                   <Wand2 className="w-3.5 h-3.5" />
@@ -650,6 +713,13 @@ export default function App() {
               candidateName={currentCVData.personal_info.name}
               onPhotoUploaded={handlePhotoUploaded}
               onPhotoRemoved={handlePhotoRemoved}
+            />
+
+            {/* Document Upload & AI Generation (Halaman Pertama) */}
+            <DocumentUploadCard
+              onCVGenerated={handleCVGenerated}
+              candidateName={currentCVData.personal_info.name}
+              initialLanguage={currentCVData.language || 'id'}
             />
 
             {/* A4 Sheet Container */}
@@ -817,8 +887,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Phase 3 Complete Banner Callout */}
-        <section className="bg-gradient-to-r from-emerald-950/40 via-slate-900 to-cyan-950/40 border border-emerald-500/30 rounded-2xl p-6 sm:p-7 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-2xl no-print">
+        {/* Phase 3 Complete Banner Callout (Hidden for clean UI) */}
+        <section className="hidden">
           <div className="space-y-1 text-center sm:text-left">
             <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-bold text-emerald-400 uppercase tracking-wider">
               <Sparkles className="w-4 h-4" />

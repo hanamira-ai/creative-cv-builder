@@ -30,12 +30,31 @@ export function generateStandaloneCVHtml(
     border: '#C08A3E'
   };
 
+  const isEn = data.language === 'en';
+  const labels = {
+    contact: isEn ? 'Contact' : 'Kontak',
+    coreSkills: isEn ? 'Core Skills' : 'Keahlian Inti',
+    techStack: isEn ? 'Tech Stack' : 'Tech Stack',
+    languages: isEn ? 'Languages' : 'Bahasa',
+    certifications: isEn ? 'Certifications' : 'Sertifikasi',
+    summary: isEn ? 'Professional Summary' : 'Profil Profesional',
+    workExp: isEn ? 'Work Experience' : 'Pengalaman Kerja',
+    portfolio: isEn ? 'Digital Portfolio' : 'Portofolio Digital',
+    education: isEn ? 'Formal Education' : 'Pendidikan Formal',
+    references: isEn ? 'Professional References' : 'Referensi Profesional'
+  };
+
   // Helper for proficiency percentage
   const getProficiencyPercent = (level: string) => {
-    switch (level) {
-      case 'Mahir': return 95;
-      case 'Menengah': return 75;
-      case 'Dasar': return 45;
+    switch (level?.toLowerCase()) {
+      case 'mahir':
+      case 'expert':
+      case 'advanced': return 95;
+      case 'menengah':
+      case 'intermediate': return 75;
+      case 'dasar':
+      case 'beginner':
+      case 'basic': return 45;
       default: return 70;
     }
   };
@@ -935,7 +954,7 @@ export function generateStandaloneCVHtml(
 
       <!-- Kontak -->
       <section class="sidebar-section section-block">
-        <h3 class="section-title"><span class="accent-dot"></span> Kontak</h3>
+        <h3 class="section-title"><span class="accent-dot"></span> ${escapeHtml(labels.contact)}</h3>
         <div class="contact-list">
           ${data.personal_info.contact.phone ? `
             <div class="contact-row">
@@ -967,7 +986,7 @@ export function generateStandaloneCVHtml(
 
       <!-- Kompetensi Inti (Skill Bar & Badge) -->
       <section class="sidebar-section section-block">
-        <h3 class="section-title"><span class="accent-dot"></span> Keahlian Inti</h3>
+        <h3 class="section-title"><span class="accent-dot"></span> ${escapeHtml(labels.coreSkills)}</h3>
         <div class="skills-list">
           ${coreSkillsHtml}
         </div>
@@ -975,7 +994,7 @@ export function generateStandaloneCVHtml(
 
       <!-- Tech Stack -->
       <section class="sidebar-section section-block">
-        <h3 class="section-title"><span class="accent-dot"></span> Tech Stack</h3>
+        <h3 class="section-title"><span class="accent-dot"></span> ${escapeHtml(labels.techStack)}</h3>
         <div class="tech-list">
           ${techStackHtml}
         </div>
@@ -984,7 +1003,7 @@ export function generateStandaloneCVHtml(
       <!-- Bahasa -->
       ${data.languages && data.languages.length > 0 ? `
       <section class="sidebar-section section-block">
-        <h3 class="section-title"><span class="accent-dot"></span> Bahasa</h3>
+        <h3 class="section-title"><span class="accent-dot"></span> ${escapeHtml(labels.languages)}</h3>
         <div class="lang-list">
           ${languagesHtml}
         </div>
@@ -993,7 +1012,7 @@ export function generateStandaloneCVHtml(
       <!-- Sertifikasi -->
       ${data.certifications && data.certifications.length > 0 ? `
       <section class="sidebar-section section-block">
-        <h3 class="section-title"><span class="accent-dot"></span> Sertifikasi</h3>
+        <h3 class="section-title"><span class="accent-dot"></span> ${escapeHtml(labels.certifications)}</h3>
         <div class="cert-list">
           ${certificationsHtml}
         </div>
@@ -1010,13 +1029,13 @@ export function generateStandaloneCVHtml(
 
       <!-- Ringkasan Profesional -->
       <section class="content-section section-block">
-        <h3 class="section-title"><span class="accent-dot"></span> Profil Profesional</h3>
+        <h3 class="section-title"><span class="accent-dot"></span> ${escapeHtml(labels.summary)}</h3>
         <p class="summary-text">${escapeHtml(data.personal_info.summary)}</p>
       </section>
 
       <!-- Pengalaman Kerja (Timeline Node Bertitik) -->
       <section class="content-section section-block">
-        <h3 class="section-title"><span class="accent-dot"></span> Pengalaman Kerja</h3>
+        <h3 class="section-title"><span class="accent-dot"></span> ${escapeHtml(labels.workExp)}</h3>
         <div class="timeline-container">
           ${workExperienceHtml}
         </div>
@@ -1025,7 +1044,7 @@ export function generateStandaloneCVHtml(
       <!-- Portofolio Digital -->
       ${data.digital_portfolio && data.digital_portfolio.length > 0 ? `
       <section class="content-section section-block">
-        <h3 class="section-title"><span class="accent-dot"></span> Portofolio Digital</h3>
+        <h3 class="section-title"><span class="accent-dot"></span> ${escapeHtml(labels.portfolio)}</h3>
         <div class="portfolio-grid">
           ${portfolioHtml}
         </div>
@@ -1033,7 +1052,7 @@ export function generateStandaloneCVHtml(
 
       <!-- Pendidikan -->
       <section class="content-section section-block">
-        <h3 class="section-title"><span class="accent-dot"></span> Pendidikan Formal</h3>
+        <h3 class="section-title"><span class="accent-dot"></span> ${escapeHtml(labels.education)}</h3>
         <div class="edu-list">
           ${educationHtml}
         </div>
@@ -1042,7 +1061,7 @@ export function generateStandaloneCVHtml(
       <!-- Referensi -->
       ${data.references && data.references.length > 0 ? `
       <section class="content-section section-block">
-        <h3 class="section-title"><span class="accent-dot"></span> Referensi Profesional</h3>
+        <h3 class="section-title"><span class="accent-dot"></span> ${escapeHtml(labels.references)}</h3>
         <div class="ref-grid">
           ${referencesHtml}
         </div>

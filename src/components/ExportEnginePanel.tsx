@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 import { CVData } from '../types';
 import { downloadPDF, exportToPdfClient, PUPPETEER_SERVER_SCRIPT } from '../exportPdf';
-import { generateDocxBlob } from '../exportDocx';
+import { generateAndDownloadDocx, generateDocxBlob, generateWordHtmlBlob, generateDocxHTML, PYTHON_DOCX_SCRIPT } from '../exportDocx';
+import { saveAs } from 'file-saver';
 
 interface ExportEnginePanelProps {
   currentCVData: CVData;
@@ -43,7 +44,7 @@ export const ExportEnginePanel: React.FC<ExportEnginePanelProps> = ({
   const [pdfStatus, setPdfStatus] = useState<string>('');
   const [isExportingDocx, setIsExportingDocx] = useState(false);
   const [docxSuccess, setDocxSuccess] = useState(false);
-  const [activeCodeSnippet, setActiveCodeSnippet] = useState<'pdf-client' | 'pdf-server' | 'docx-client' | 'pipeline'>('pipeline');
+  const [activeCodeSnippet, setActiveCodeSnippet] = useState<'pdf-client' | 'pdf-server' | 'docx-client' | 'docx-table-html' | 'docx-python' | 'pipeline'>('pipeline');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Trigger Client-Side PDF Export (Target strictly id="cv-paper-target")
@@ -72,21 +73,21 @@ export const ExportEnginePanel: React.FC<ExportEnginePanelProps> = ({
     }
   };
 
-  // Trigger Client-Side DOCX Export
-  const handleExportDocx = async () => {
+  // Trigger Client-Side DOCX / Word Export
+  const handleExportDocx = async (format: 'docx' | 'doc' = 'docx') => {
     try {
       setIsExportingDocx(true);
-      const cleanName = currentCVData.personal_info.name.replace(/\s+/g, '_');
-      const blob = await generateDocxBlob(currentCVData, selectedThemeId);
+      const sbTheme: 'light' | 'dark' = sidebarTheme === 'light' ? 'light' : 'dark';
+      const bgTheme: 'light' | 'dark' = badgeTheme === 'light' ? 'light' : 'dark';
       
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `CV_${cleanName}_Word.docx`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      if (format === 'doc') {
+        const fullName = (currentCVData.personal_info as any).full_name || currentCVData.personal_info.name || 'Candidate';
+        const cleanName = fullName.trim().replace(/\s+/g, '_');
+        const blob = generateWordHtmlBlob(currentCVData, selectedThemeId, sbTheme, bgTheme);
+        saveAs(blob, `CV_${cleanName}.doc`);
+      } else {
+        await generateAndDownloadDocx(currentCVData, selectedThemeId, sbTheme, bgTheme);
+      }
 
       setDocxSuccess(true);
       setTimeout(() => {
@@ -151,37 +152,44 @@ export async function downloadPDF(elementId = 'cv-paper-target') {
   pdf.save('Curriculum_Vitae_A4.pdf');
 }`;
 
-  const clientDocxCode = `// EKSPOR DOCX DENGAN LIBRARY 'docx' (Office Open XML Asli)
+  const clientDocxCode = `// EKSPOR DOCX DENGAN LIBRARY 'docx' (Office Open XML Asli - DXA Valid)
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx';
 
 export async function exportToDocxFile(cvData) {
-  // 1. Buat Tabel 2-Kolom (Kiri 32% Shaded, Kanan 68% Plain)
-  const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+  // 1. Total Lebar Printable A4: 10,772 DXA (Sidebar: 3,447 DXA [32%], Main: 7,325 DXA [68%])
+  const SIDEBAR_DXA = 3447;
+  const MAIN_DXA = 7325;
+  const TOTAL_DXA = 10772;
+
+  const noBorder = { style: BorderStyle.NONE, size: 0, color: 'auto' };
 
   const table = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+    width: { size: TOTAL_DXA, type: WidthType.DXA },
+    columnWidths: [SIDEBAR_DXA, MAIN_DXA],
+    borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, insideHorizontal: noBorder, insideVertical: noBorder },
     rows: [
       new TableRow({
         children: [
           // Sidebar Kiri (32%)
           new TableCell({
-            width: { size: 32, type: WidthType.PERCENTAGE },
-            shading: { fill: 'F4F6F8' },
+            width: { size: SIDEBAR_DXA, type: WidthType.DXA },
+            shading: { fill: '182634' },
+            margins: { top: 240, bottom: 240, left: 220, right: 220 },
             children: [
-              new Paragraph({ children: [new TextRun({ text: cvData.personal_info.name, bold: true, size: 28 })] }),
-              new Paragraph({ children: [new TextRun({ text: 'KONTAK', bold: true, color: '182634' })] }),
-              new Paragraph({ text: cvData.personal_info.contact.email }),
-              new Paragraph({ text: cvData.personal_info.contact.phone })
+              new Paragraph({ children: [new TextRun({ text: cvData.personal_info.name, bold: true, size: 28, color: 'FFFFFF' })] }),
+              new Paragraph({ children: [new TextRun({ text: 'KONTAK', bold: true, color: 'C08A3E' })] }),
+              new Paragraph({ text: cvData.personal_info.contact.email, color: 'CBD5E1' }),
+              new Paragraph({ text: cvData.personal_info.contact.phone, color: 'CBD5E1' })
             ]
           }),
           // Konten Utama Kanan (68%)
           new TableCell({
-            width: { size: 68, type: WidthType.PERCENTAGE },
+            width: { size: MAIN_DXA, type: WidthType.DXA },
+            margins: { top: 240, bottom: 240, left: 280, right: 220 },
             children: [
-              new Paragraph({ children: [new TextRun({ text: cvData.personal_info.title, bold: true, size: 22 })] }),
+              new Paragraph({ children: [new TextRun({ text: cvData.personal_info.title, bold: true, size: 22, color: '182634' })] }),
               new Paragraph({ text: cvData.personal_info.summary }),
-              new Paragraph({ children: [new TextRun({ text: 'PENGALAMAN KERJA', bold: true })] })
+              new Paragraph({ children: [new TextRun({ text: 'PENGALAMAN KERJA', bold: true, color: '182634' })] })
             ]
           })
         ]
@@ -189,13 +197,43 @@ export async function exportToDocxFile(cvData) {
     ]
   });
 
-  // 2. Bungkus ke Dokumen Word & Ekspor Blob
+  // 2. Bungkus ke Dokumen Word A4 Presisi (Margin 10mm = 567 DXA)
   const doc = new Document({
-    sections: [{ properties: { page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } } }, children: [table] }]
+    sections: [{
+      properties: {
+        page: { size: { width: 11906, height: 16838 }, margin: { top: 567, right: 567, bottom: 567, left: 567 } }
+      },
+      children: [table]
+    }]
   });
 
   const blob = await Packer.toBlob(doc);
   return blob;
+}`;
+
+  const docxTableHtmlCode = `// STRUKTUR TABEL 2-KOLOM NATIVE MICROSOFT WORD (generateDocxHTML)
+// Mengubah data JSON CV menjadi HTML berbasis tabel 2-kolom:
+// <table width="100%">
+//   <tr>
+//     <td width="32%" valign="top" style="background-color: #182634; ...">...Sidebar...</td>
+//     <td width="68%" valign="top" style="background-color: #ffffff; ...">...Main Content...</td>
+//   </tr>
+// </table>
+// Disertai Office XML Namespace Header agar 100% kompatibel dan tidak corrupt di MS Word.
+
+import { generateDocxHTML, generateWordHtmlBlob } from './exportDocx';
+
+export function exportWordHtmlTable(cvData, themeId = 'navy-gold') {
+  const html = generateDocxHTML(cvData, themeId);
+  const blob = new Blob(['\\ufeff' + html], { type: 'application/msword;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'CV_' + cvData.personal_info.name.replace(/\\s+/g, '_') + '.doc';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }`;
 
   const endToEndPipelineCode = `/**
@@ -288,28 +326,38 @@ export function renderCvHtml(cvData, themeId = 'navy-gold') {
             </p>
           </div>
 
-          <button
-            onClick={handleExportDocx}
-            disabled={isExportingDocx}
-            className="w-full py-2.5 px-3 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
-          >
-            {isExportingDocx ? (
-              <span className="flex items-center gap-2 text-[11px] animate-pulse">
-                <Cpu className="w-3.5 h-3.5 animate-spin" />
-                Menyusun Dokumen Word...
-              </span>
-            ) : docxSuccess ? (
-              <span className="flex items-center gap-1.5 text-emerald-300">
-                <Check className="w-4 h-4" />
-                Tersimpan (.docx)
-              </span>
-            ) : (
-              <>
-                <FileText className="w-4 h-4" />
-                <span>Unduh File .DOCX</span>
-              </>
-            )}
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => handleExportDocx('docx')}
+              disabled={isExportingDocx}
+              className="w-full py-2.5 px-3 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              {isExportingDocx ? (
+                <span className="flex items-center gap-2 text-[11px] animate-pulse">
+                  <Cpu className="w-3.5 h-3.5 animate-spin" />
+                  Menyusun Dokumen Word...
+                </span>
+              ) : docxSuccess ? (
+                <span className="flex items-center gap-1.5 text-emerald-300">
+                  <Check className="w-4 h-4" />
+                  Tersimpan (.docx)
+                </span>
+              ) : (
+                <>
+                  <FileText className="w-4 h-4" />
+                  <span>Unduh File .DOCX</span>
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => handleExportDocx('doc')}
+              disabled={isExportingDocx}
+              className="w-full py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-medium text-[11px] rounded-lg border border-slate-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              title="Unduh format tabel Word XML (.doc)"
+            >
+              <span>Alternatif: Unduh .DOC (HTML Table)</span>
+            </button>
+          </div>
         </div>
 
         {/* Action 3: Browser Print / PDF Native */}
@@ -459,6 +507,36 @@ export function renderCvHtml(cvData, themeId = 'navy-gold') {
               Workflow Utuh
             </button>
             <button
+              onClick={() => setActiveCodeSnippet('docx-client')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                activeCodeSnippet === 'docx-client'
+                  ? 'bg-cyan-500 text-slate-950'
+                  : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              DOCX Native (OpenXML)
+            </button>
+            <button
+              onClick={() => setActiveCodeSnippet('docx-table-html')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                activeCodeSnippet === 'docx-table-html'
+                  ? 'bg-cyan-500 text-slate-950'
+                  : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              Tabel Native Word (HTML)
+            </button>
+            <button
+              onClick={() => setActiveCodeSnippet('docx-python')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                activeCodeSnippet === 'docx-python'
+                  ? 'bg-cyan-500 text-slate-950'
+                  : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              Python-docx Backend
+            </button>
+            <button
               onClick={() => setActiveCodeSnippet('pdf-client')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 activeCodeSnippet === 'pdf-client'
@@ -478,16 +556,6 @@ export function renderCvHtml(cvData, themeId = 'navy-gold') {
             >
               Server PDF (Puppeteer)
             </button>
-            <button
-              onClick={() => setActiveCodeSnippet('docx-client')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeCodeSnippet === 'docx-client'
-                  ? 'bg-amber-500 text-slate-950'
-                  : 'bg-slate-900 text-slate-400 hover:text-white'
-              }`}
-            >
-              DOCX (docx Library)
-            </button>
           </div>
         </div>
 
@@ -496,9 +564,11 @@ export function renderCvHtml(cvData, themeId = 'navy-gold') {
             onClick={() => {
               const code = 
                 activeCodeSnippet === 'pipeline' ? endToEndPipelineCode :
+                activeCodeSnippet === 'docx-client' ? clientDocxCode :
+                activeCodeSnippet === 'docx-table-html' ? docxTableHtmlCode :
+                activeCodeSnippet === 'docx-python' ? PYTHON_DOCX_SCRIPT :
                 activeCodeSnippet === 'pdf-client' ? clientPdfCode :
-                activeCodeSnippet === 'pdf-server' ? PUPPETEER_SERVER_SCRIPT :
-                clientDocxCode;
+                PUPPETEER_SERVER_SCRIPT;
               copyToClipboard(code, activeCodeSnippet);
             }}
             className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition-all z-10"
@@ -509,9 +579,11 @@ export function renderCvHtml(cvData, themeId = 'navy-gold') {
 
           <pre>
             {activeCodeSnippet === 'pipeline' && endToEndPipelineCode}
+            {activeCodeSnippet === 'docx-client' && clientDocxCode}
+            {activeCodeSnippet === 'docx-table-html' && docxTableHtmlCode}
+            {activeCodeSnippet === 'docx-python' && PYTHON_DOCX_SCRIPT}
             {activeCodeSnippet === 'pdf-client' && clientPdfCode}
             {activeCodeSnippet === 'pdf-server' && PUPPETEER_SERVER_SCRIPT}
-            {activeCodeSnippet === 'docx-client' && clientDocxCode}
           </pre>
         </div>
       </section>

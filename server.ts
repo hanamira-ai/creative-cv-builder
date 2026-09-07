@@ -43,6 +43,11 @@ app.get("/api/health", (_req, res) => {
 const cvDataSchema = {
   type: Type.OBJECT,
   properties: {
+    language: {
+      type: Type.STRING,
+      enum: ["id", "en"],
+      description: "Kode bahasa target CV: 'id' untuk Bahasa Indonesia atau 'en' untuk English"
+    },
     personal_info: {
       type: Type.OBJECT,
       properties: {
@@ -59,7 +64,7 @@ const cvDataSchema = {
           },
           required: ["phone", "email", "address"]
         },
-        summary: { type: Type.STRING, description: "Ringkasan eksekutif profesional 2-4 kalimat yang ringkas dan padat" },
+        summary: { type: Type.STRING, description: "Ringkasan eksekutif profesional 2-4 kalimat yang ringkas dan padat sesuai bahasa target" },
         profile_picture_placeholder: { type: Type.STRING, description: "URL atau string kosong" }
       },
       required: ["name", "title", "contact", "summary"]
@@ -73,8 +78,7 @@ const cvDataSchema = {
           skill_name: { type: Type.STRING, description: "Nama keahlian" },
           proficiency_level: {
             type: Type.STRING,
-            enum: ["Mahir", "Menengah", "Dasar"],
-            description: "Tingkat kemahiran: harus salah satu dari 'Mahir', 'Menengah', atau 'Dasar'"
+            description: "Tingkat kemahiran: 'Mahir', 'Menengah', atau 'Dasar' (Bahasa Indonesia) atau 'Advanced', 'Intermediate', 'Basic', 'Expert' (English)"
           }
         },
         required: ["skill_name", "proficiency_level"]
@@ -196,79 +200,94 @@ const cvDataSchema = {
   ]
 };
 
+// Circuit breaker state to gracefully route around temporary model cluster spikes
+let lastHighDemandTime = 0;
+const HIGH_DEMAND_COOLDOWN_MS = 60 * 1000; // 60 seconds cooldown
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
- * Helper to generate CV structured JSON with automatic retry and model fallback.
- * If a model returns 503 (high demand) or 429 (rate limit), it seamlessly
- * switches to backup models (e.g. gemini-flash-latest, gemini-3.1-flash-lite).
+ * Helper to generate CV structured JSON with automatic retry, circuit-breaker,
+ * and resilient model fallback.
+ * If gemini-3.8-flash is experiencing 503 (high demand) or 429, it seamlessly
+ * routes to gemini-3.1-flash-lite with backoff.
  */
 async function generateCVWithFallback(
   ai: GoogleGenAI,
   promptContents: any[],
   schema: any
 ): Promise<{ parsedJson: any; usedModel: string }> {
-  // Candidate Flash models in order of current health & availability
-  const candidateModels = [
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-3.6-flash",
-    "gemini-3.7-flash",
-    "gemini-3.8-flash"
-  ];
+  // If recent requests encountered 503 high demand, prioritize gemini-3.1-flash-lite
+  const isCoolingDown = Date.now() - lastHighDemandTime < HIGH_DEMAND_COOLDOWN_MS;
+  const candidateModels = isCoolingDown
+    ? ["gemini-3.1-flash-lite", "gemini-3.8-flash"]
+    : ["gemini-3.8-flash", "gemini-3.1-flash-lite"];
 
   let lastCaughtError: any = null;
 
-  for (const modelName of candidateModels) {
-    try {
-      console.log(`[Gemini API] Memproses dokumen dengan model: ${modelName}...`);
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: promptContents,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: schema,
-          temperature: 0.2
+  for (let mIdx = 0; mIdx < candidateModels.length; mIdx++) {
+    const modelName = candidateModels[mIdx];
+    const maxAttempts = 2; // Up to 2 attempts per model with exponential backoff
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`[Gemini API] Memproses dokumen dengan model: ${modelName} (Percobaan ${attempt}/${maxAttempts})...`);
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: promptContents,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: schema,
+            temperature: 0.2
+          }
+        });
+
+        const rawText = response.text?.trim();
+        if (!rawText) {
+          throw new Error("Model Gemini tidak mengembalikan respons teks.");
         }
-      });
 
-      const rawText = response.text?.trim();
-      if (!rawText) {
-        throw new Error("Model Gemini tidak mengembalikan respons teks.");
-      }
+        // Clean any accidental markdown code block wrap
+        let cleaned = rawText;
+        if (cleaned.startsWith("```")) {
+          cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+        }
 
-      // Clean any accidental markdown code block wrap
-      let cleaned = rawText;
-      if (cleaned.startsWith("```")) {
-        cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-      }
+        const parsedJson = JSON.parse(cleaned);
+        console.log(`[Gemini API] Sukses memproses CV dengan model: ${modelName}`);
+        return { parsedJson, usedModel: modelName };
+      } catch (err: any) {
+        lastCaughtError = err;
+        const msg = (err?.message || "").toLowerCase();
+        const isDemandOrUnavailable =
+          msg.includes("503") ||
+          msg.includes("high demand") ||
+          msg.includes("unavailable") ||
+          msg.includes("429") ||
+          msg.includes("resource exhausted") ||
+          err?.status === 503 ||
+          err?.status === 429;
 
-      const parsedJson = JSON.parse(cleaned);
-      console.log(`[Gemini API] Sukses memproses CV dengan model: ${modelName}`);
-      return { parsedJson, usedModel: modelName };
-    } catch (err: any) {
-      lastCaughtError = err;
-      const msg = (err?.message || "").toLowerCase();
-      const isDemandOrUnavailable =
-        msg.includes("503") ||
-        msg.includes("high demand") ||
-        msg.includes("unavailable") ||
-        msg.includes("429") ||
-        msg.includes("resource exhausted") ||
-        msg.includes("not_found") ||
-        err?.status === 503 ||
-        err?.status === 429;
+        if (isDemandOrUnavailable) {
+          lastHighDemandTime = Date.now();
+          console.log(
+            `[Gemini API] Model ${modelName} sedang antrean padat/503. Menyiapkan peralihan mulus (Percobaan ${attempt})...`
+          );
 
-      console.warn(
-        `[Gemini API] Model ${modelName} gagal: ${err?.message || err}. Beralih ke model berikutnya...`
-      );
-
-      // If high demand or temporary cluster outage, immediately proceed to next candidate model
-      if (isDemandOrUnavailable) {
-        continue;
+          // If attempt 1 failed with 503, wait briefly before next attempt or next model
+          if (attempt < maxAttempts) {
+            await sleep(800 * attempt);
+            continue;
+          }
+        } else {
+          // If error is not a transient 503/429 (e.g. invalid parameter), don't retry same model
+          break;
+        }
       }
     }
   }
 
-  throw lastCaughtError || new Error("Semua model Gemini sedang mengalami antrean tinggi. Silakan coba kembali sesaat lagi.");
+  throw lastCaughtError || new Error("Semua server AI sedang mengalami antrean tinggi. Silakan coba kembali sesaat lagi.");
 }
 
 function formatFriendlyErrorMessage(err: any): string {
@@ -299,7 +318,20 @@ function formatFriendlyErrorMessage(err: any): string {
 // Document Parsing & CV Generation endpoint
 app.post("/api/parse-cv", async (req, res) => {
   try {
-    const { fileBase64, mimeType, fileName, textContent, optimizePhrasing = true } = req.body;
+    const {
+      fileBase64,
+      mimeType,
+      fileName,
+      textContent,
+      optimizePhrasing = true,
+      target_language,
+      targetLanguage
+    } = req.body;
+
+    // Normalize target language: 'id' or 'en' (default: 'id')
+    const rawLang = String(target_language || targetLanguage || "id").trim().toLowerCase();
+    const targetLang: "id" | "en" = rawLang === "en" ? "en" : "id";
+    const isEn = targetLang === "en";
 
     if (!fileBase64 && (!textContent || !textContent.trim())) {
       return res.status(400).json({
@@ -331,38 +363,67 @@ app.post("/api/parse-cv", async (req, res) => {
 Anda adalah Pakar Penulisan CV Eksekutif & Ahli Penataan Format Standar A4 Internasional.
 Tugas Anda adalah membedah dan mengekstrak seluruh informasi dari dokumen CV/teks berikut, kemudian memetakannya secara presisi ke dalam struktur JSON yang sesuai dengan skema yang diberikan.
 
+PILIHAN BAHASA TARGET: ${isEn ? "ENGLISH (en)" : "BAHASA INDONESIA (id)"}
+Instruksi Wajib: Terjemahkan dan susun isi data CV ini ke dalam bahasa: ${isEn ? "English" : "Bahasa Indonesia"}.
+
+${
+  isEn
+    ? `ATURAN TRANSLASI & PENYUSUNAN STANDAR BAHASA INGGRIS (ENGLISH CV STANDARD):
+- Terjemahkan dan sesuaikan seluruh teks hasil ekstraksi (Professional Summary, Work Experience Highlights, Project Portfolio Descriptions, Skills, Education details, Languages, dan References) ke dalam Bahasa Inggris standar CV profesional internasional.
+- Pada poin pengalaman kerja (highlights), WAJIB gunakan action verbs profesional di awal setiap kalimat (contoh: "Managed", "Developed", "Spearheaded", "Implemented", "Designed", "Architected", "Engineered", "Optimized", "Streamlined", "Accelerated", "Formulated", "Delivered").
+- PENTING / TETAP PERTAHANKAN:
+  * Nama instansi, universitas, sekolah (contoh: "Institut Teknologi Bandung (ITB)", "Universitas Indonesia").
+  * Nama perusahaan atau organisasi tempat bekerja (contoh: "PT Fintek Inovasi Nusantara", "Mizumoto Photography").
+  * Nama gelar asli jika merupakan singkatan lokal (misal: "S.Kom.", "S.T.") atau padanan internasional jika dicantumkan.
+  * Istilah teknis, bahasa pemrograman, framework, dan tools teknis (Tech Stack) sesuai bentuk aslinya tanpa diterjemahkan secara kaku (contoh: Go, TypeScript, PostgreSQL, Docker, Kubernetes, AWS, React, Tailwind CSS).
+- Tingkat kemahiran 'core_skills' (proficiency_level) HARUS menggunakan Bahasa Inggris standar: 'Advanced', 'Intermediate', atau 'Basic' (atau 'Expert').
+- Set nilai field 'language' bernilai "en".`
+    : `ATURAN PENYUSUNAN STANDAR BAHASA INDONESIA:
+- Sajikan seluruh teks hasil ekstraksi (Ringkasan, Pengalaman Kerja, Deskripsi Portofolio, Keahlian, Konteks Tech Stack, Pendidikan, Bahasa, dan Referensi) dalam Bahasa Indonesia yang baku dan profesional.
+- Gunakan kata kerja aktif profesional (Action Verbs) pada poin pencapaian kerja (contoh: "Memimpin", "Mengembangkan", "Merancang", "Mengoptimalkan", "Mengimplementasikan").
+- Tetap pertahankan nama instansi, nama perusahaan, nama gelar, dan istilah teknis (Tech Stack) sesuai bentuk aslinya tanpa diterjemahkan secara kaku (misal: Docker, Kubernetes, CI/CD, React, TypeScript).
+- Tingkat kemahiran 'core_skills' (proficiency_level) HARUS salah satu dari: "Mahir", "Menengah", atau "Dasar".
+- Set nilai field 'language' bernilai "id".`
+}
+
 PANDUAN EKSTRAKSI & OPTIMASI DATA:
 1. INFORMASI PRIBADI:
    - Ekstrak Nama Lengkap, Gelar/Posisi Profesional, dan Kontak (Telepon, Email, Domisili, LinkedIn, GitHub jika ada).
-   - Buat atau poles 'summary' (Ringkasan Eksekutif) menjadi 2-4 kalimat yang profesional, padat, dan berbobot. Jika summary di berkas sumber kosong atau sangat singkat, formulasikan ringkasan eksekutif profesional yang merangkum keahlian dan riwayat kandidat secara elegan.
+   - Buat atau poles 'summary' (Ringkasan Eksekutif) menjadi 2-4 kalimat yang profesional, padat, dan berbobot dalam ${isEn ? "Bahasa Inggris" : "Bahasa Indonesia"}. Jika summary di berkas sumber kosong atau sangat singkat, formulasikan ringkasan eksekutif profesional yang merangkum keahlian dan riwayat kandidat secara elegan.
 2. KEAHLIAN & TECH STACK:
-   - Petakan keahlian ke 'core_skills' dengan tingkat kemahiran ('Mahir', 'Menengah', atau 'Dasar').
-   - Petakan perkakas, bahasa pemrograman, framework, atau tool ke 'tech_stack' (dengan category, tool, description, dan level). Jika deskripsi tool terlalu singkat, berikan keterangan konteks penggunaan profesional yang relevan.
+   - Petakan keahlian ke 'core_skills' dengan tingkat kemahiran (${isEn ? "'Advanced', 'Intermediate', atau 'Basic'" : "'Mahir', 'Menengah', atau 'Dasar'"}).
+   - Petakan perkakas, bahasa pemrograman, framework, atau tool ke 'tech_stack' (dengan category, tool, description, dan level). Jika deskripsi tool terlalu singkat, berikan keterangan konteks penggunaan profesional yang relevan dalam ${isEn ? "Bahasa Inggris" : "Bahasa Indonesia"}.
 3. PENGALAMAN KERJA (WORK EXPERIENCE):
    - Ekstrak posisi, perusahaan, periode waktu secara faktual dan akurat.
    - Poin Pencapaian ('highlights'): ${
      optimizePhrasing
-       ? "Jika kalimat pada CV sumber terlalu singkat, tidak lengkap, atau kurang berdampak (misal hanya menulis 'membuat website' atau 'fix bug'), formulasikan dan optimalkan kalimatnya menggunakan kata kerja aktif yang kuat dan gaya profesional (Action Verb + Context + Impact/Result) TANPA MENGUBAH fakta riwayat kerja, nama perusahaan, posisi jabatan, atau periode waktu sebenarnya."
-       : "Pertahankan poin pencapaian sesuai teks asli."
+       ? isEn
+         ? "Formulasikan dan optimalkan setiap poin pencapaian menggunakan strong action verbs + impact/metrics profesional dalam Bahasa Inggris (contoh: 'Spearheaded migration to microservices, boosting throughput by 40%') TANPA MENGUBAH fakta riwayat kerja, nama perusahaan, posisi, atau periode waktu sebenarnya."
+         : "Formulasikan dan optimalkan kalimatnya menggunakan kata kerja aktif yang kuat dan gaya profesional (Action Verb + Context + Impact/Result) TANPA MENGUBAH fakta riwayat kerja, nama perusahaan, posisi jabatan, atau periode waktu sebenarnya."
+       : isEn
+         ? "Sesuaikan poin pencapaian ke Bahasa Inggris profesional dengan action verbs."
+         : "Pertahankan poin pencapaian sesuai teks asli dalam Bahasa Indonesia yang rapi."
    }
 4. PENYESUAIAN DATA OTOMATIS:
-   - Jika ada bagian CV pengguna yang belum terisi atau terlalu singkat (seperti deskripsi proyek di portofolio, ringkasan profil, atau penjelasan stack), optimalkan kalimatnya agar tetap bernada profesional, berorientasi dampak, dan siap tampil di layout resume A4 tanpa mengubah fakta riwayat kerja.
+   - Jika ada bagian CV pengguna yang belum terisi atau terlalu singkat (seperti deskripsi proyek di portofolio, ringkasan profil, atau penjelasan stack), optimalkan kalimatnya agar tetap bernada profesional, berorientasi dampak, dan siap tampil di layout resume A4 dalam ${isEn ? "Bahasa Inggris" : "Bahasa Indonesia"} tanpa mengubah fakta riwayat kerja.
 5. PORTOFOLIO DIGITAL & PROYEK:
    - Jika ada proyek yang disebutkan di CV, masukkan ke 'digital_portfolio'. Jika tidak ada secara eksplisit, ambil 1-2 inisiatif atau proyek utama dari riwayat kerja terbaru kandidat.
 6. PENDIDIKAN, BAHASA, SERTIFIKASI, REFERENSI:
-   - Ekstrak seluruh riwayat pendidikan, kemampuan bahasa (sertakan tingkat kemahiran seperti 'Penutur Asli', 'Profesional', dsb.), sertifikasi berlisensi, dan referensi kerja (jika tidak ada di sumber, tulis 'Tersedia berdasarkan permintaan').
+   - Ekstrak seluruh riwayat pendidikan, kemampuan bahasa (sertakan tingkat kemahiran seperti ${isEn ? "'Native Speaker', 'Professional Proficiency', 'Conversational'" : "'Penutur Asli', 'Profesional', dsb."}), sertifikasi berlisensi, dan referensi kerja (jika tidak ada di sumber, tulis ${isEn ? "'Available upon request'" : "'Tersedia berdasarkan permintaan'"}).
 
 PERATURAN MUTLAK:
-- Seluruh nilai 'proficiency_level' pada 'core_skills' HARUS berupa salah satu dari: "Mahir", "Menengah", atau "Dasar".
+- Seluruh nilai 'proficiency_level' pada 'core_skills' HARUS berupa salah satu dari: ${isEn ? '"Expert", "Advanced", "Intermediate", "Basic"' : '"Mahir", "Menengah", "Dasar"'}.
 - Jangan pernah mengosongkan array wajib.
 - Jawaban HARUS selalu dalam format JSON murni yang valid sesuai skema yang ditentukan.
 `;
+
+    const langInstructionSuffix = `\n\nInstruksi Wajib Pilihan Bahasa Target: Terjemahkan dan susun isi data CV ini ke dalam bahasa: ${isEn ? "English" : "Bahasa Indonesia"}.`;
 
     // Formulate the user prompt
     if (extractedDocText) {
       promptContents = [
         {
-          text: `${systemInstructionText}\n\nBerikut adalah isi teks yang diekstrak dari dokumen DOCX (${fileName || "dokumen"}):\n\n${extractedDocText}`
+          text: `${systemInstructionText}\n\nBerikut adalah isi teks yang diekstrak dari dokumen DOCX (${fileName || "dokumen"}):\n\n${extractedDocText}${langInstructionSuffix}`
         }
       ];
     } else if (fileBase64 && mimeType === "application/pdf") {
@@ -375,20 +436,20 @@ PERATURAN MUTLAK:
           }
         },
         {
-          text: `${systemInstructionText}\n\nEkstrak seluruh informasi CV dari dokumen PDF terlampir di atas ke dalam format JSON skema yang ditentukan.`
+          text: `${systemInstructionText}\n\nEkstrak seluruh informasi CV dari dokumen PDF terlampir di atas ke dalam format JSON skema yang ditentukan.${langInstructionSuffix}`
         }
       ];
     } else if (fileBase64 && mimeType?.startsWith("text/")) {
       const textBuffer = Buffer.from(fileBase64, "base64").toString("utf-8");
       promptContents = [
         {
-          text: `${systemInstructionText}\n\nBerikut adalah teks dokumen CV:\n\n${textBuffer}`
+          text: `${systemInstructionText}\n\nBerikut adalah teks dokumen CV:\n\n${textBuffer}${langInstructionSuffix}`
         }
       ];
     } else if (textContent) {
       promptContents = [
         {
-          text: `${systemInstructionText}\n\nBerikut adalah teks dokumen CV yang dimasukkan pengguna:\n\n${textContent}`
+          text: `${systemInstructionText}\n\nBerikut adalah teks dokumen CV yang dimasukkan pengguna:\n\n${textContent}${langInstructionSuffix}`
         }
       ];
     } else {
@@ -404,11 +465,17 @@ PERATURAN MUTLAK:
       cvDataSchema
     );
 
+    // Ensure language is firmly set
+    if (parsedJson) {
+      parsedJson.language = targetLang;
+    }
+
     return res.json({
       success: true,
       data: parsedJson,
       usedModel,
-      message: "Dokumen CV berhasil dianalisis dan dipetakan ke skema JSON A4."
+      targetLanguage: targetLang,
+      message: `Dokumen CV berhasil dianalisis dan dipetakan ke skema JSON A4 (${isEn ? "English" : "Bahasa Indonesia"}).`
     });
   } catch (error: any) {
     console.error("Error in /api/parse-cv:", error);

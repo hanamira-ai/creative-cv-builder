@@ -1,6 +1,7 @@
 import { CVData } from './types';
 
 export const sampleGuruhWicaksonoCV: CVData = {
+  language: "id",
   personal_info: {
     name: "Guruh Wicaksono",
     title: "Digital Entrepreneur & GIS Specialist",

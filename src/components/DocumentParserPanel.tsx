@@ -13,7 +13,9 @@ import {
   ClipboardPaste,
   ShieldCheck,
   FileCheck2,
-  RotateCcw
+  RotateCcw,
+  Languages,
+  Globe
 } from 'lucide-react';
 import { CVData } from '../types';
 import { validateCVJson } from '../validator';
@@ -32,6 +34,7 @@ export const DocumentParserPanel: React.FC<DocumentParserPanelProps> = ({
   const [fileBase64, setFileBase64] = useState<string>('');
   const [pastedText, setPastedText] = useState<string>('');
   const [optimizePhrasing, setOptimizePhrasing] = useState<boolean>(true);
+  const [targetLanguage, setTargetLanguage] = useState<'id' | 'en'>('id');
   
   // Loading & Processing state
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -261,20 +264,24 @@ Bahasa Indonesia (Penutur Asli), Bahasa Inggris (Menengah)`;
 
     try {
       setIsProcessing(true);
-      setProcessingStage('Mempersiapkan dokumen dan payload data...');
+      setProcessingStage('Mempersiapkan dokumen dan preferensi bahasa...');
 
       const payload: any = {
-        optimizePhrasing
+        optimizePhrasing,
+        target_language: targetLanguage,
+        targetLanguage: targetLanguage
       };
+
+      const langLabel = targetLanguage === 'en' ? 'English' : 'Bahasa Indonesia';
 
       if (activeInputMode === 'file' && selectedFile) {
         payload.fileBase64 = fileBase64;
         payload.mimeType = selectedFile.type || 'application/octet-stream';
         payload.fileName = selectedFile.name;
-        setProcessingStage(`Menganalisis berkas ${selectedFile.name} dengan Gemini AI...`);
+        setProcessingStage(`Menganalisis berkas ${selectedFile.name} dengan Gemini AI (Target: ${langLabel})...`);
       } else {
         payload.textContent = pastedText.trim();
-        setProcessingStage('Menganalisis teks CV dengan Gemini AI...');
+        setProcessingStage(`Menganalisis teks CV dengan Gemini AI (Target: ${langLabel})...`);
       }
 
       // API Call to /api/parse-cv
@@ -524,6 +531,83 @@ Bahasa Indonesia (Penutur Asli), Bahasa Inggris (Menengah)`;
           />
         </div>
       )}
+
+      {/* Fitur Multi-Bahasa: Pilihan Bahasa Target CV (ID vs EN) */}
+      <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 shrink-0">
+              <Languages className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-white flex items-center gap-2">
+                <span>Bahasa Target Dokumen CV</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                  {targetLanguage === 'en' ? 'English CV' : 'Bahasa Indonesia'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Pilih bahasa untuk hasil ekstraksi, translasi otomatis, dan format tampilan template A4.
+              </p>
+            </div>
+          </div>
+
+          {/* Segmented Toggle Control */}
+          <div 
+            role="group"
+            aria-label="Pilihan Bahasa Target CV"
+            className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-700/80 shrink-0"
+          >
+            <button
+              type="button"
+              id="lang-select-id"
+              onClick={() => setTargetLanguage('id')}
+              disabled={isProcessing}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                targetLanguage === 'id'
+                  ? 'bg-cyan-500 text-slate-950 shadow-md font-extrabold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>🇮🇩</span>
+              <span>Bahasa Indonesia</span>
+            </button>
+            <button
+              type="button"
+              id="lang-select-en"
+              onClick={() => setTargetLanguage('en')}
+              disabled={isProcessing}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                targetLanguage === 'en'
+                  ? 'bg-cyan-500 text-slate-950 shadow-md font-extrabold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>🇬🇧</span>
+              <span>English</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Dynamic Context Information for Chosen Language */}
+        <div className="pt-2 border-t border-slate-900/80 text-[11px] flex items-start gap-2">
+          {targetLanguage === 'id' ? (
+            <div className="text-cyan-200/90 flex items-start gap-1.5">
+              <span className="shrink-0 font-bold text-cyan-400">ℹ️ Mode Bahasa Indonesia:</span>
+              <span>
+                Seluruh teks hasil ekstraksi (Ringkasan, Pengalaman Kerja, Portofolio, Keahlian, Pendidikan) disajikan dalam Bahasa Indonesia baku dan profesional. Istilah teknis (Tech Stack) tetap dipertahankan sesuai bentuk aslinya.
+              </span>
+            </div>
+          ) : (
+            <div className="text-amber-200/90 flex items-start gap-1.5">
+              <span className="shrink-0 font-bold text-amber-400">🌐 Mode English (International CV):</span>
+              <span>
+                Seluruh teks diterjemahkan dan disesuaikan ke standar CV internasional menggunakan <strong>action verbs</strong> profesional (<em>Managed, Developed, Spearheaded, Implemented</em>). Nama instansi, nama perusahaan, gelar lokal (S.Kom.), dan istilah teknis tetap dipertahankan.
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Feature 3: Automatic Data Optimization Checkbox */}
       <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5 flex items-start gap-3">

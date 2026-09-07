@@ -173,6 +173,10 @@ export function validateCVJson(data: any): ValidationResult {
     }
   });
 
+  if (data.language && data.language !== 'id' && data.language !== 'en') {
+    warnings.push("Field 'language' disarankan bernilai 'id' (Bahasa Indonesia) atau 'en' (English).");
+  }
+
   return {
     isValid: errors.length === 0,
     errors,
