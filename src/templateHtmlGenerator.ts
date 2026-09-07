@@ -78,7 +78,7 @@ export function generateStandaloneCVHtml(
   `).join('');
 
   const workExperienceHtml = (data.work_experience || []).map(exp => `
-    <div class="timeline-node">
+    <div class="timeline-node timeline-item">
       <div class="node-bullet"></div>
       <div class="node-content">
         <div class="node-header">
@@ -94,10 +94,9 @@ export function generateStandaloneCVHtml(
   `).join('');
 
   const portfolioHtml = (data.digital_portfolio || []).map(p => `
-    <div class="portfolio-item">
+    <div class="portfolio-item portfolio-card">
       <div class="portfolio-head">
         <h4 class="portfolio-title">${escapeHtml(p.project_name)}</h4>
-        ${p.link ? `<a href="${escapeHtml(p.link)}" target="_blank" rel="noreferrer" class="portfolio-link">Lihat Proyek ↗</a>` : ''}
       </div>
       <p class="portfolio-desc">${escapeHtml(p.description)}</p>
       <div class="portfolio-tags">
@@ -107,7 +106,7 @@ export function generateStandaloneCVHtml(
   `).join('');
 
   const educationHtml = (data.education || []).map(edu => `
-    <div class="edu-item">
+    <div class="edu-item education-item">
       <div class="edu-head">
         <strong class="edu-degree">${escapeHtml(edu.degree)}</strong>
         <span class="edu-year">${escapeHtml(edu.year)}</span>
@@ -118,7 +117,7 @@ export function generateStandaloneCVHtml(
   `).join('');
 
   const referencesHtml = (data.references || []).map(ref => `
-    <div class="ref-item">
+    <div class="ref-item reference-item">
       <div class="ref-name">${escapeHtml(ref.name)}</div>
       <div class="ref-title">${escapeHtml(ref.title)}</div>
       <div class="ref-contact">${escapeHtml(ref.contact_info)}</div>
@@ -232,23 +231,29 @@ export function generateStandaloneCVHtml(
       padding: 20px 0;
     }
 
-    /* 1. Atur Container Utama menjadi 2 Kolom (CSS GRID 32% 68%) */
+    /* 1. Atur Container Utama menjadi 2 Kolom Fixed A4 (CSS GRID 32% 68%) */
+    .cv-paper,
+    #cv-paper-target,
     .cv-layout,
     .cv-container, 
     .cv-page-container {
-      display: grid;
-      grid-template-columns: 32% 68%; /* 32% Sidebar, 68% Konten Utama */
-      width: 210mm;
-      min-height: 297mm;
-      box-sizing: border-box;
-      padding: 10mm;
-      background-color: #ffffff;
-      margin: 0 auto;
-      position: relative;
+      display: grid !important;
+      grid-template-columns: 32% 68% !important; /* 32% Sidebar, 68% Konten Utama */
+      width: 210mm !important;
+      min-width: 210mm !important;
+      max-width: 210mm !important;
+      min-height: 297mm !important;
+      height: auto !important;
+      box-sizing: border-box !important;
+      padding: 12mm 10mm !important; /* Safe zone 12mm atas & bawah */
+      background-color: #ffffff !important;
+      margin: 0 auto !important;
+      position: relative !important;
+      align-items: stretch !important;
       box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
     }
 
-    /* Sidebar Styling (Kolom Kiri 32%) */
+    /* Sidebar Styling (Kolom Kiri 32%) - Memanjang seimbang */
     .sidebar {
       background-color: var(--sidebar-bg, var(--bg-sidebar, #f4f6f8));
       color: var(--sidebar-text, var(--text-dark));
@@ -257,6 +262,31 @@ export function generateStandaloneCVHtml(
       display: flex;
       flex-direction: column;
       gap: 4mm;
+      height: 100% !important;
+      min-height: 100% !important;
+      align-self: stretch !important;
+      box-sizing: border-box !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    /* Page Break Control Rules */
+    .timeline-item, 
+    .portfolio-card, 
+    .education-item, 
+    .reference-item, 
+    .section-block,
+    .timeline-node,
+    .portfolio-item,
+    .edu-item,
+    .ref-item {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }
+
+    h2, h3, .section-title {
+      break-after: avoid !important;
+      page-break-after: avoid !important;
     }
 
     .sidebar .section-title {
@@ -832,7 +862,7 @@ export function generateStandaloneCVHtml(
        ========================================================= */
     @media print {
       @page {
-        size: A4;
+        size: A4 portrait;
         margin: 0;
       }
 
@@ -840,36 +870,61 @@ export function generateStandaloneCVHtml(
         background-color: transparent !important;
         padding: 0 !important;
         margin: 0 !important;
+        height: auto !important;
       }
 
+      .cv-paper,
+      #cv-paper-target,
       .cv-layout,
       .cv-container,
       .cv-page-container {
         box-shadow: none !important;
         border: none !important;
-        margin: 0 !important;
+        margin: 0 auto !important;
         width: 210mm !important;
-        height: 297mm !important;
+        min-width: 210mm !important;
+        max-width: 210mm !important;
+        height: auto !important;
         min-height: 297mm !important;
-        max-height: 297mm !important;
-        padding: 10mm !important;
+        max-height: none !important;
+        padding: 12mm 10mm !important;
         box-sizing: border-box !important;
-        overflow: hidden !important;
+        overflow: visible !important;
+        page-break-after: always;
+        break-after: page;
       }
 
+      .sidebar {
+        height: 100% !important;
+        min-height: 100% !important;
+        align-self: stretch !important;
+        background-color: var(--sidebar-bg, var(--bg-sidebar, #f4f6f8)) !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      .timeline-item, 
+      .portfolio-card, 
+      .education-item, 
+      .reference-item, 
+      .section-block,
       .timeline-node,
       .portfolio-item,
       .edu-item,
-      .ref-grid,
-      .section-title {
-        page-break-inside: avoid !important;
+      .ref-item {
         break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      h2, h3, .section-title {
+        break-after: avoid !important;
+        page-break-after: avoid !important;
       }
     }
   </style>
 </head>
 <body class="${escapeHtml(activeTheme.cssClass)} sidebar-theme-${escapeHtml(activeSidebarMode)} badge-theme-${escapeHtml(activeBadgeMode)}">
-  <div class="cv-layout cv-container">
+  <div id="cv-paper-target" class="cv-paper cv-layout cv-container">
     
     <!-- SIDEBAR KIRI (~32%) -->
     <aside class="sidebar sidebar-${escapeHtml(activeSidebarMode)}">
@@ -879,7 +934,7 @@ export function generateStandaloneCVHtml(
       </div>
 
       <!-- Kontak -->
-      <section class="sidebar-section">
+      <section class="sidebar-section section-block">
         <h3 class="section-title"><span class="accent-dot"></span> Kontak</h3>
         <div class="contact-list">
           ${data.personal_info.contact.phone ? `
@@ -911,7 +966,7 @@ export function generateStandaloneCVHtml(
       </section>
 
       <!-- Kompetensi Inti (Skill Bar & Badge) -->
-      <section class="sidebar-section">
+      <section class="sidebar-section section-block">
         <h3 class="section-title"><span class="accent-dot"></span> Keahlian Inti</h3>
         <div class="skills-list">
           ${coreSkillsHtml}
@@ -919,7 +974,7 @@ export function generateStandaloneCVHtml(
       </section>
 
       <!-- Tech Stack -->
-      <section class="sidebar-section">
+      <section class="sidebar-section section-block">
         <h3 class="section-title"><span class="accent-dot"></span> Tech Stack</h3>
         <div class="tech-list">
           ${techStackHtml}
@@ -928,7 +983,7 @@ export function generateStandaloneCVHtml(
 
       <!-- Bahasa -->
       ${data.languages && data.languages.length > 0 ? `
-      <section class="sidebar-section">
+      <section class="sidebar-section section-block">
         <h3 class="section-title"><span class="accent-dot"></span> Bahasa</h3>
         <div class="lang-list">
           ${languagesHtml}
@@ -937,7 +992,7 @@ export function generateStandaloneCVHtml(
 
       <!-- Sertifikasi -->
       ${data.certifications && data.certifications.length > 0 ? `
-      <section class="sidebar-section">
+      <section class="sidebar-section section-block">
         <h3 class="section-title"><span class="accent-dot"></span> Sertifikasi</h3>
         <div class="cert-list">
           ${certificationsHtml}
@@ -948,19 +1003,19 @@ export function generateStandaloneCVHtml(
     <!-- KONTEN UTAMA KANAN (~68%) -->
     <main class="content main-content">
       <!-- Header Nama & Title -->
-      <header class="header-block">
+      <header class="header-block section-block">
         <h1 class="candidate-name">${escapeHtml(data.personal_info.name)}</h1>
         <div class="candidate-title">${escapeHtml(data.personal_info.title)}</div>
       </header>
 
       <!-- Ringkasan Profesional -->
-      <section class="content-section">
+      <section class="content-section section-block">
         <h3 class="section-title"><span class="accent-dot"></span> Profil Profesional</h3>
         <p class="summary-text">${escapeHtml(data.personal_info.summary)}</p>
       </section>
 
       <!-- Pengalaman Kerja (Timeline Node Bertitik) -->
-      <section class="content-section">
+      <section class="content-section section-block">
         <h3 class="section-title"><span class="accent-dot"></span> Pengalaman Kerja</h3>
         <div class="timeline-container">
           ${workExperienceHtml}
@@ -969,7 +1024,7 @@ export function generateStandaloneCVHtml(
 
       <!-- Portofolio Digital -->
       ${data.digital_portfolio && data.digital_portfolio.length > 0 ? `
-      <section class="content-section">
+      <section class="content-section section-block">
         <h3 class="section-title"><span class="accent-dot"></span> Portofolio Digital</h3>
         <div class="portfolio-grid">
           ${portfolioHtml}
@@ -977,7 +1032,7 @@ export function generateStandaloneCVHtml(
       </section>` : ''}
 
       <!-- Pendidikan -->
-      <section class="content-section">
+      <section class="content-section section-block">
         <h3 class="section-title"><span class="accent-dot"></span> Pendidikan Formal</h3>
         <div class="edu-list">
           ${educationHtml}
@@ -986,7 +1041,7 @@ export function generateStandaloneCVHtml(
 
       <!-- Referensi -->
       ${data.references && data.references.length > 0 ? `
-      <section class="content-section">
+      <section class="content-section section-block">
         <h3 class="section-title"><span class="accent-dot"></span> Referensi Profesional</h3>
         <div class="ref-grid">
           ${referencesHtml}

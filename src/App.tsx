@@ -34,16 +34,19 @@ import { CV_THEMES } from './themes';
 import { A4ResumePreview } from './components/A4ResumePreview';
 import { generateStandaloneCVHtml } from './templateHtmlGenerator';
 import { ExportEnginePanel } from './components/ExportEnginePanel';
-import { exportToPdfClient } from './exportPdf';
+import { downloadPDF, exportToPdfClient } from './exportPdf';
 import { generateDocxBlob } from './exportDocx';
 import { ProfilePhotoUploader } from './components/ProfilePhotoUploader';
 import { DocumentParserPanel } from './components/DocumentParserPanel';
+import { LayoutPageMode, SpacingDensity } from './paginationUtils';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'preview' | 'parser' | 'export' | 'htmlcode' | 'schema' | 'validator'>('preview');
   const [selectedThemeId, setSelectedThemeId] = useState<string>('navy-gold');
   const [sidebarTheme, setSidebarTheme] = useState<'light' | 'dark'>('dark');
   const [badgeTheme, setBadgeTheme] = useState<'light' | 'dark'>('dark');
+  const [layoutMode, setLayoutMode] = useState<LayoutPageMode>('auto');
+  const [spacingDensity, setSpacingDensity] = useState<SpacingDensity>('normal');
   const [zoomLevel, setZoomLevel] = useState<number>(0.92);
   const [jsonInput, setJsonInput] = useState<string>(JSON.stringify(sampleGuruhWicaksonoCV, null, 2));
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
@@ -85,9 +88,9 @@ export default function App() {
     try {
       setIsQuickExportingPdf(true);
       const cleanName = currentCVData.personal_info.name.replace(/\s+/g, '_');
-      await exportToPdfClient('printable-cv-sheet', {
+      await downloadPDF('cv-paper-target', {
         filename: `CV_${cleanName}_A4.pdf`,
-        quality: 2.5
+        quality: 2
       });
     } catch (e) {
       console.error(e);
@@ -180,6 +183,27 @@ export default function App() {
     }
   };
 
+  const handleCVGenerated = (generatedData: CVData) => {
+    // Pertahankan foto profil kustom yang sudah diunggah jika CV hasil generate belum memilikinya
+    const currentPhoto = currentCVData.personal_info.profile_picture_placeholder;
+    const finalData: CVData = {
+      ...generatedData,
+      personal_info: {
+        ...generatedData.personal_info,
+        profile_picture_placeholder: generatedData.personal_info.profile_picture_placeholder || currentPhoto || ''
+      }
+    };
+    setJsonInput(JSON.stringify(finalData, null, 2));
+    setLastGeneratedTimestamp(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    setShowGeneratedSuccessAlert(true);
+    setActiveTab('preview');
+  };
+
+  const handleResetToSample = () => {
+    setJsonInput(JSON.stringify(sampleGuruhWicaksonoCV, null, 2));
+    setShowGeneratedSuccessAlert(false);
+  };
+
   return (
     <div id="cv-engine-app" className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-white">
       
@@ -203,6 +227,17 @@ export default function App() {
 
           {/* Quick Actions (Print & Instant Export) */}
           <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            {/* Quick Trigger: Import Dokumen & Generate CV */}
+            <button
+              id="btn-nav-generate-cv"
+              onClick={() => setActiveTab('parser')}
+              className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 rounded-xl font-bold text-xs transition-all shadow-md shadow-amber-500/10 active:scale-95 cursor-pointer"
+              title="Unggah berkas PDF, DOCX, atau Teks untuk di-generate otomatis dengan Gemini AI"
+            >
+              <Wand2 className="w-4 h-4 text-slate-950" />
+              <span>Import & Generate CV</span>
+            </button>
+
             {/* Quick PDF button */}
             <button
               onClick={handleQuickDownloadPdf}
@@ -262,8 +297,9 @@ export default function App() {
           {/* Main Tabs */}
           <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
             <button
+              id="tab-btn-preview"
               onClick={() => setActiveTab('preview')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'preview'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -274,8 +310,22 @@ export default function App() {
             </button>
 
             <button
+              id="tab-btn-parser"
+              onClick={() => setActiveTab('parser')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'parser'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Wand2 className="w-3.5 h-3.5 text-amber-400" />
+              <span>Parser Dokumen (Generate CV)</span>
+            </button>
+
+            <button
+              id="tab-btn-export"
               onClick={() => setActiveTab('export')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'export'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -286,8 +336,9 @@ export default function App() {
             </button>
 
             <button
+              id="tab-btn-htmlcode"
               onClick={() => setActiveTab('htmlcode')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'htmlcode'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -298,8 +349,9 @@ export default function App() {
             </button>
 
             <button
+              id="tab-btn-schema"
               onClick={() => setActiveTab('schema')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'schema'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -310,8 +362,9 @@ export default function App() {
             </button>
 
             <button
+              id="tab-btn-validator"
               onClick={() => setActiveTab('validator')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'validator'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -500,6 +553,53 @@ export default function App() {
             ========================================================= */}
         {activeTab === 'preview' ? (
           <div className="flex flex-col gap-6">
+            {/* Success Alert if CV was just generated */}
+            {showGeneratedSuccessAlert && (
+              <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-300 shadow-lg no-print">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <strong className="text-white text-sm font-bold">CV Berhasil Di-generate dari Dokumen!</strong>
+                      {lastGeneratedTimestamp && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">
+                          {lastGeneratedTimestamp}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-emerald-200/80">
+                      Data kandidat <strong>{currentCVData.personal_info.name}</strong> ({currentCVData.personal_info.title}) telah terisi ke template A4 & Live Preview diperbarui secara instan.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setActiveTab('schema')}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-200 rounded-lg text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
+                  >
+                    Lihat JSON
+                  </button>
+                  <button
+                    onClick={handleResetToSample}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-300 rounded-lg text-xs font-semibold border border-slate-700 transition-colors cursor-pointer flex items-center gap-1"
+                    title="Kembalikan ke data contoh Guruh Wicaksono"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset ke Contoh</span>
+                  </button>
+                  <button
+                    onClick={() => setShowGeneratedSuccessAlert(false)}
+                    className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                    title="Tutup notifikasi"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Specs Summary Pill */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 no-print">
               <div className="flex items-center gap-3 text-xs text-slate-300">
@@ -519,14 +619,26 @@ export default function App() {
                 <span className="hidden xl:inline">
                   Badge: <strong className="text-cyan-300">{badgeTheme === 'dark' ? 'Dark Theme (Font Putih)' : 'Light Theme (Font Gelap)'}</strong>
                 </span>
+                <span className="hidden 2xl:inline">•</span>
+                <span className="hidden 2xl:inline">
+                  Tata Letak: <strong className="text-amber-400 capitalize">{layoutMode} ({spacingDensity})</strong>
+                </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={() => setActiveTab('parser')}
+                  className="text-xs text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1.5 cursor-pointer bg-amber-500/10 hover:bg-amber-500/20 px-3 py-1.5 rounded-xl border border-amber-500/30 transition-all shadow-sm"
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                  <span>Unggah Dokumen Baru</span>
+                </button>
+
                 <button
                   onClick={() => setActiveTab('export')}
-                  className="text-xs text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 cursor-pointer"
+                  className="text-xs text-slate-300 hover:text-white font-semibold flex items-center gap-1 cursor-pointer px-2.5 py-1.5"
                 >
-                  <span>Buka Opsi Ekspor Lengkap</span>
+                  <span>Opsi Ekspor</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -550,6 +662,10 @@ export default function App() {
                 badgeTheme={badgeTheme}
                 onBadgeThemeChange={setBadgeTheme}
                 zoomLevel={zoomLevel}
+                layoutMode={layoutMode}
+                onLayoutModeChange={setLayoutMode}
+                spacingDensity={spacingDensity}
+                onSpacingDensityChange={setSpacingDensity}
               />
             </div>
           </div>
@@ -565,8 +681,20 @@ export default function App() {
               sidebarTheme={sidebarTheme}
               badgeTheme={badgeTheme}
               zoomLevel={1.0}
+              layoutMode={layoutMode}
+              spacingDensity={spacingDensity}
             />
           </div>
+        )}
+
+        {/* =========================================================
+            TAB: DOCUMENT PARSER & GENERATE CV (GEMINI AI)
+            ========================================================= */}
+        {activeTab === 'parser' && (
+          <DocumentParserPanel 
+            onCVGenerated={handleCVGenerated}
+            onClose={() => setActiveTab('preview')}
+          />
         )}
 
         {/* =========================================================

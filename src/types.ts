@@ -1,4 +1,6 @@
-export type ProficiencyLevel = 'Mahir' | 'Menengah' | 'Dasar';
+export type ProficiencyLevel = 
+  | 'Mahir' | 'Menengah' | 'Dasar'
+  | 'Expert' | 'Advanced' | 'Intermediate' | 'Beginner' | 'Basic';
 
 export interface ContactInfo {
   phone: string;
@@ -67,6 +69,7 @@ export interface Reference {
 }
 
 export interface CVData {
+  language?: 'id' | 'en';
   personal_info: PersonalInfo;
   core_skills: CoreSkill[];
   tech_stack: TechStackItem[];

@@ -22,7 +22,14 @@ function getGenAI(): GoogleGenAI {
     if (!apiKey) {
       throw new Error("GEMINI_API_KEY environment variable is not configured");
     }
-    aiClient = new GoogleGenAI({ apiKey });
+    aiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
   }
   return aiClient;
 }
@@ -189,6 +196,106 @@ const cvDataSchema = {
   ]
 };
 
+/**
+ * Helper to generate CV structured JSON with automatic retry and model fallback.
+ * If a model returns 503 (high demand) or 429 (rate limit), it seamlessly
+ * switches to backup models (e.g. gemini-flash-latest, gemini-3.1-flash-lite).
+ */
+async function generateCVWithFallback(
+  ai: GoogleGenAI,
+  promptContents: any[],
+  schema: any
+): Promise<{ parsedJson: any; usedModel: string }> {
+  // Candidate Flash models in order of current health & availability
+  const candidateModels = [
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash"
+  ];
+
+  let lastCaughtError: any = null;
+
+  for (const modelName of candidateModels) {
+    try {
+      console.log(`[Gemini API] Memproses dokumen dengan model: ${modelName}...`);
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: promptContents,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: schema,
+          temperature: 0.2
+        }
+      });
+
+      const rawText = response.text?.trim();
+      if (!rawText) {
+        throw new Error("Model Gemini tidak mengembalikan respons teks.");
+      }
+
+      // Clean any accidental markdown code block wrap
+      let cleaned = rawText;
+      if (cleaned.startsWith("```")) {
+        cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+      }
+
+      const parsedJson = JSON.parse(cleaned);
+      console.log(`[Gemini API] Sukses memproses CV dengan model: ${modelName}`);
+      return { parsedJson, usedModel: modelName };
+    } catch (err: any) {
+      lastCaughtError = err;
+      const msg = (err?.message || "").toLowerCase();
+      const isDemandOrUnavailable =
+        msg.includes("503") ||
+        msg.includes("high demand") ||
+        msg.includes("unavailable") ||
+        msg.includes("429") ||
+        msg.includes("resource exhausted") ||
+        msg.includes("not_found") ||
+        err?.status === 503 ||
+        err?.status === 429;
+
+      console.warn(
+        `[Gemini API] Model ${modelName} gagal: ${err?.message || err}. Beralih ke model berikutnya...`
+      );
+
+      // If high demand or temporary cluster outage, immediately proceed to next candidate model
+      if (isDemandOrUnavailable) {
+        continue;
+      }
+    }
+  }
+
+  throw lastCaughtError || new Error("Semua model Gemini sedang mengalami antrean tinggi. Silakan coba kembali sesaat lagi.");
+}
+
+function formatFriendlyErrorMessage(err: any): string {
+  if (!err) return "Terjadi kesalahan saat memproses dokumen dengan Gemini AI.";
+  const rawMsg = err?.message || String(err);
+  try {
+    const parsed = JSON.parse(rawMsg);
+    if (parsed?.error?.message) {
+      if (parsed.error.code === 503 || parsed.error.status === "UNAVAILABLE" || parsed.error.message.includes("high demand")) {
+        return "Server AI sedang mengalami lonjakan antrean sementara (High Demand / 503). Sistem telah mencoba server cadangan. Silakan klik tombol 'Generate CV' lagi dalam beberapa detik.";
+      }
+      if (parsed.error.code === 429 || parsed.error.message.includes("quota")) {
+        return "Batas kuota sementara tercapai. Mohon tunggu beberapa saat sebelum mencoba kembali.";
+      }
+      return parsed.error.message;
+    }
+  } catch {
+    // Not JSON
+  }
+
+  if (rawMsg.includes("503") || rawMsg.includes("high demand") || rawMsg.includes("UNAVAILABLE")) {
+    return "Server AI sedang mengalami lonjakan antrean sementara (High Demand). Silakan coba klik tombol 'Generate CV' lagi dalam beberapa detik.";
+  }
+
+  return rawMsg;
+}
+
 // Document Parsing & CV Generation endpoint
 app.post("/api/parse-cv", async (req, res) => {
   try {
@@ -227,21 +334,23 @@ Tugas Anda adalah membedah dan mengekstrak seluruh informasi dari dokumen CV/tek
 PANDUAN EKSTRAKSI & OPTIMASI DATA:
 1. INFORMASI PRIBADI:
    - Ekstrak Nama Lengkap, Gelar/Posisi Profesional, dan Kontak (Telepon, Email, Domisili, LinkedIn, GitHub jika ada).
-   - Buat atau poles 'summary' (Ringkasan Eksekutif) menjadi 2-4 kalimat yang profesional, padat, dan berbobot.
+   - Buat atau poles 'summary' (Ringkasan Eksekutif) menjadi 2-4 kalimat yang profesional, padat, dan berbobot. Jika summary di berkas sumber kosong atau sangat singkat, formulasikan ringkasan eksekutif profesional yang merangkum keahlian dan riwayat kandidat secara elegan.
 2. KEAHLIAN & TECH STACK:
    - Petakan keahlian ke 'core_skills' dengan tingkat kemahiran ('Mahir', 'Menengah', atau 'Dasar').
-   - Petakan perkakas, bahasa pemrograman, framework, atau tool ke 'tech_stack' (dengan category, tool, description, dan level).
+   - Petakan perkakas, bahasa pemrograman, framework, atau tool ke 'tech_stack' (dengan category, tool, description, dan level). Jika deskripsi tool terlalu singkat, berikan keterangan konteks penggunaan profesional yang relevan.
 3. PENGALAMAN KERJA (WORK EXPERIENCE):
-   - Ekstrak posisi, perusahaan, periode waktu.
+   - Ekstrak posisi, perusahaan, periode waktu secara faktual dan akurat.
    - Poin Pencapaian ('highlights'): ${
      optimizePhrasing
-       ? "Jika kalimat pada CV sumber terlalu singkat atau kurang berdampak, poles kalimatnya menggunakan kata kerja aktif yang kuat dan gaya profesional (Action Verb + Context + Result) TANPA MENGUBAH fakta pekerjaan, nama perusahaan, posisi, atau periode waktu sebenarnya."
+       ? "Jika kalimat pada CV sumber terlalu singkat, tidak lengkap, atau kurang berdampak (misal hanya menulis 'membuat website' atau 'fix bug'), formulasikan dan optimalkan kalimatnya menggunakan kata kerja aktif yang kuat dan gaya profesional (Action Verb + Context + Impact/Result) TANPA MENGUBAH fakta riwayat kerja, nama perusahaan, posisi jabatan, atau periode waktu sebenarnya."
        : "Pertahankan poin pencapaian sesuai teks asli."
    }
-4. PORTOFOLIO DIGITAL & PROYEK:
-   - Jika ada proyek yang disebutkan di CV, masukkan ke 'digital_portfolio'. Jika tidak ada secara eksplisit, ambil proyek/inisiatif utama dari riwayat kerja terbaru.
-5. PENDIDIKAN, BAHASA, SERTIFIKASI, REFERENSI:
-   - Ekstrak seluruh riwayat pendidikan, kemampuan bahasa (sertakan tingkat kemahiran seperti 'Penutur Asli', 'Profesional', dsb.), sertifikasi berlisensi, dan referensi kerja (jika ada, atau tulis 'Tersedia berdasarkan permintaan').
+4. PENYESUAIAN DATA OTOMATIS:
+   - Jika ada bagian CV pengguna yang belum terisi atau terlalu singkat (seperti deskripsi proyek di portofolio, ringkasan profil, atau penjelasan stack), optimalkan kalimatnya agar tetap bernada profesional, berorientasi dampak, dan siap tampil di layout resume A4 tanpa mengubah fakta riwayat kerja.
+5. PORTOFOLIO DIGITAL & PROYEK:
+   - Jika ada proyek yang disebutkan di CV, masukkan ke 'digital_portfolio'. Jika tidak ada secara eksplisit, ambil 1-2 inisiatif atau proyek utama dari riwayat kerja terbaru kandidat.
+6. PENDIDIKAN, BAHASA, SERTIFIKASI, REFERENSI:
+   - Ekstrak seluruh riwayat pendidikan, kemampuan bahasa (sertakan tingkat kemahiran seperti 'Penutur Asli', 'Profesional', dsb.), sertifikasi berlisensi, dan referensi kerja (jika tidak ada di sumber, tulis 'Tersedia berdasarkan permintaan').
 
 PERATURAN MUTLAK:
 - Seluruh nilai 'proficiency_level' pada 'core_skills' HARUS berupa salah satu dari: "Mahir", "Menengah", atau "Dasar".
@@ -257,7 +366,7 @@ PERATURAN MUTLAK:
         }
       ];
     } else if (fileBase64 && mimeType === "application/pdf") {
-      // PDF natively handled by Gemini 3.8 Flash
+      // PDF natively handled by Gemini Flash
       promptContents = [
         {
           inlineData: {
@@ -289,33 +398,24 @@ PERATURAN MUTLAK:
       });
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: promptContents,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: cvDataSchema,
-        temperature: 0.2
-      }
-    });
-
-    const responseText = response.text;
-    if (!responseText) {
-      throw new Error("Gemini API tidak mengembalikan konten JSON.");
-    }
-
-    const parsedJson = JSON.parse(responseText);
+    const { parsedJson, usedModel } = await generateCVWithFallback(
+      ai,
+      promptContents,
+      cvDataSchema
+    );
 
     return res.json({
       success: true,
       data: parsedJson,
+      usedModel,
       message: "Dokumen CV berhasil dianalisis dan dipetakan ke skema JSON A4."
     });
   } catch (error: any) {
     console.error("Error in /api/parse-cv:", error);
+    const friendlyMsg = formatFriendlyErrorMessage(error);
     return res.status(500).json({
       success: false,
-      error: error.message || "Terjadi kesalahan saat memproses dokumen dengan Gemini AI."
+      error: friendlyMsg
     });
   }
 });

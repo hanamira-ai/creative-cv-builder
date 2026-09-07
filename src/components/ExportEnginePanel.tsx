@@ -17,7 +17,7 @@ import {
   Workflow
 } from 'lucide-react';
 import { CVData } from '../types';
-import { exportToPdfClient, PUPPETEER_SERVER_SCRIPT } from '../exportPdf';
+import { downloadPDF, exportToPdfClient, PUPPETEER_SERVER_SCRIPT } from '../exportPdf';
 import { generateDocxBlob } from '../exportDocx';
 
 interface ExportEnginePanelProps {
@@ -46,15 +46,15 @@ export const ExportEnginePanel: React.FC<ExportEnginePanelProps> = ({
   const [activeCodeSnippet, setActiveCodeSnippet] = useState<'pdf-client' | 'pdf-server' | 'docx-client' | 'pipeline'>('pipeline');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  // Trigger Client-Side PDF Export
+  // Trigger Client-Side PDF Export (Target strictly id="cv-paper-target")
   const handleExportPdfClient = async () => {
     try {
       setIsExportingPdf(true);
-      setPdfStatus('Memulai rasterisasi kanvas...');
+      setPdfStatus('Memulai rasterisasi kanvas A4 (windowWidth: 794)...');
       const cleanName = currentCVData.personal_info.name.replace(/\s+/g, '_');
-      await exportToPdfClient('printable-cv-sheet', {
+      await downloadPDF('cv-paper-target', {
         filename: `CV_${cleanName}_A4.pdf`,
-        quality: 2.5,
+        quality: 2,
         onProgress: (msg) => setPdfStatus(msg)
       });
       setPdfStatus('Berhasil diunduh!');
@@ -105,28 +105,38 @@ export const ExportEnginePanel: React.FC<ExportEnginePanelProps> = ({
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const clientPdfCode = `// EKSPOR PDF CLIENT-SIDE DENGAN html-to-image & jsPDF
-import { toCanvas } from 'html-to-image';
+  const clientPdfCode = `// EKSPOR PDF CLIENT-SIDE DENGAN html2canvas & jsPDF (A4 Fixed, windowWidth: 794)
+import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
-export async function downloadPdfFromElement(elementId = 'printable-cv-sheet') {
+export async function downloadPDF(elementId = 'cv-paper-target') {
   const element = document.getElementById(elementId);
   if (!element) return;
 
-  // 1. Render DOM menjadi Canvas tajam dengan browser-native SVG renderer
-  // Natively mendukung CSS modern (oklch, CSS variables, flexbox, web fonts)
-  const canvas = await toCanvas(element, {
-    pixelRatio: 2.5,
+  // 1. Render DOM ke Canvas dengan windowWidth: 794 (A4 Desktop 96 DPI)
+  const canvas = await html2canvas(element, {
+    scale: 2,
+    useCORS: true,
+    allowTaint: true,
     backgroundColor: '#FFFFFF',
-    cacheBust: true,
-    style: {
-      transform: 'none',
-      margin: '0',
-      boxShadow: 'none'
+    windowWidth: 794, // Kunci viewport A4 desktop agar layout 2-kolom tidak collapse
+    ignoreElements: (node) => node.classList?.contains('no-print'),
+    onclone: (clonedDoc) => {
+      const cloned = clonedDoc.getElementById(elementId);
+      if (cloned) {
+        if (cloned.parentElement) cloned.parentElement.style.transform = 'none';
+        cloned.style.transform = 'none';
+        cloned.style.margin = '0';
+        cloned.style.boxShadow = 'none';
+        cloned.style.width = '210mm';
+        cloned.style.minHeight = '297mm';
+        cloned.style.display = 'grid';
+        cloned.style.gridTemplateColumns = '32% 68%';
+      }
     }
   });
 
-  // 2. Inisialisasi dokumen jsPDF A4 portrait (210mm x 297mm)
+  // 2. Inisialisasi dokumen jsPDF A4 portrait (210mm x 297mm) Margin: 0
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -135,11 +145,9 @@ export async function downloadPdfFromElement(elementId = 'printable-cv-sheet') {
   });
 
   const imgData = canvas.toDataURL('image/jpeg', 0.98);
-  const pdfWidth = 210;
-  const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
-  // 3. Masukkan gambar ke halaman PDF & unduh
-  pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(pdfHeight, 297));
+  // 3. Masukkan gambar pas ke halaman PDF A4 (margin 0) & unduh
+  pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
   pdf.save('Curriculum_Vitae_A4.pdf');
 }`;
 

@@ -12,20 +12,68 @@
   margin: 0;
 }
 
-/* Atur Container Utama menjadi 2 Kolom */
-.cv-layout,
-.cv-container {
-  display: grid;
-  grid-template-columns: 32% 68%; /* 32% Sidebar, 68% Konten Utama */
-  width: 210mm;
-  min-height: 297mm;
-  box-sizing: border-box;
-  padding: 10mm;
-  background-color: #ffffff;
-  position: relative;
+/* =========================================================
+   FIX LAYOUT 2-KOLOM FIXED A4 (HAPUS RESPONSIVE BREAKPOINT ON CV)
+   Paksa CSS wrapper per lembar menggunakan:
+   display: grid; grid-template-columns: 32% 68%; width: 210mm; height: 297mm;
+   ========================================================= */
+.cv-page-sheet,
+.cv-paper:not(.cv-pages-wrapper),
+.cv-layout:not(.cv-pages-wrapper),
+.cv-container:not(.cv-pages-wrapper) {
+  display: grid !important;
+  grid-template-columns: 32% 68% !important; /* 32% Sidebar, 68% Konten Utama */
+  width: 210mm !important;
+  min-width: 210mm !important;
+  max-width: 210mm !important;
+  min-height: 297mm !important;
+  height: 297mm !important;
+  max-height: 297mm !important;
+  box-sizing: border-box !important;
+  padding: 12mm 10mm !important; /* Safe zone 12mm atas & bawah */
+  background-color: #ffffff !important;
+  position: relative !important;
+  margin: 0 auto !important;
+  flex-shrink: 0 !important;
+  align-items: stretch !important;
+  overflow: hidden !important;
+  page-break-after: always;
+  break-after: page;
 }
 
-/* Sidebar Styling */
+/* Wrapper multi-halaman jika ada beberapa lembar */
+.cv-pages-wrapper {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  width: 210mm !important;
+  max-width: 210mm !important;
+  margin: 0 auto !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+/* Pastikan kolom anak stabil dan tidak bergeser saat layar di-resize */
+.cv-paper aside,
+#cv-paper-target aside,
+.cv-paper .sidebar,
+#cv-paper-target .sidebar {
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.cv-paper main,
+#cv-paper-target main,
+.cv-paper .content,
+#cv-paper-target .content,
+.cv-paper .main-content,
+#cv-paper-target .main-content {
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Sidebar Styling - Memanjang seimbang penuh */
 .sidebar {
   background-color: var(--bg-sidebar, #f4f6f8); /* Warna latar tipis untuk membedakan area */
   padding: 12px;
@@ -33,7 +81,13 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  height: 100% !important;
+  min-height: 100% !important;
+  align-self: stretch !important;
+  box-sizing: border-box !important;
   transition: background-color 0.2s ease, color 0.2s ease;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
 }
 
 /* Sidebar Dark Theme Overrides */
@@ -193,9 +247,30 @@
   display: none !important;
 }
 
+/* =========================================================
+   PAGE BREAK CONTROL (MULTI-PAGE PAGINATION CLEANUP)
+   ========================================================= */
+.timeline-item, 
+.portfolio-card, 
+.education-item, 
+.reference-item, 
+.section-block,
+.timeline-node,
+.portfolio-item,
+.edu-item,
+.ref-item {
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
+}
+
+h2, h3, .section-header, .section-title {
+  break-after: avoid !important;
+  page-break-after: avoid !important;
+}
+
 @media print {
   @page {
-    size: A4;
+    size: A4 portrait;
     margin: 0;
   }
 
@@ -204,13 +279,13 @@
     margin: 0 !important;
     padding: 0 !important;
     width: 210mm !important;
-    height: 297mm !important;
-    overflow: hidden !important;
+    height: auto !important;
+    overflow: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  /* Hide app navigation, headers, controls, and toolbars */
+  /* Sembunyikan kontrol UI total saat print */
   header, 
   #app-navigation, 
   #control-toolbar, 
@@ -218,23 +293,67 @@
   footer,
   .no-print {
     display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
   }
 
-  /* Force printable sheet to occupy clean A4 sheet without shadows */
-  #printable-cv-sheet,
-  .cv-layout,
-  .cv-container {
+  /* Multi-page container A4 mengalir alami */
+  .cv-page-sheet {
     box-shadow: none !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     width: 210mm !important;
+    min-width: 210mm !important;
+    max-width: 210mm !important;
     height: 297mm !important;
     min-height: 297mm !important;
     max-height: 297mm !important;
-    padding: 10mm !important;
+    padding: 12mm 10mm !important;
     box-sizing: border-box !important;
     overflow: hidden !important;
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+
+  .cv-page-sheet:last-child {
     page-break-after: avoid !important;
     break-after: avoid !important;
+  }
+
+  .cv-pages-wrapper {
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+
+  /* Pastikan background sidebar (.sidebar) memanjang seimbang atau berulang secara visual di halaman ke-2 */
+  .sidebar,
+  .cv-paper .sidebar,
+  #cv-paper-target .sidebar {
+    height: 100% !important;
+    min-height: 100% !important;
+    align-self: stretch !important;
+    background-color: var(--bg-sidebar, #f4f6f8) !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .timeline-item, 
+  .portfolio-card, 
+  .education-item, 
+  .reference-item, 
+  .section-block,
+  .timeline-node,
+  .portfolio-item,
+  .edu-item,
+  .ref-item {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  h2, h3, .section-header, .section-title {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
   }
 
   .break-inside-avoid {

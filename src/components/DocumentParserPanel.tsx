@@ -12,7 +12,8 @@ import {
   ArrowRight,
   ClipboardPaste,
   ShieldCheck,
-  FileCheck2
+  FileCheck2,
+  RotateCcw
 } from 'lucide-react';
 import { CVData } from '../types';
 import { validateCVJson } from '../validator';
@@ -195,6 +196,53 @@ REFERENSI:
     setActiveInputMode('text');
   };
 
+  const handleLoadShortSampleText = () => {
+    const shortSample = `NAMA: Dian Pratama
+POSISI: Frontend Web Developer
+KONTAK:
+Telepon: 0812-3456-7890
+Email: dian.pratama@email.com
+Domisili: Jakarta Selatan, Indonesia
+LinkedIn: linkedin.com/in/dianpratama
+GitHub: github.com/dianpratama
+
+RINGKASAN:
+Web Developer berpengalaman membangun aplikasi React dan dashboard modern.
+
+KEAHLIAN:
+React, TypeScript, Tailwind CSS, Next.js, REST API, Git, Redux Toolkit
+
+PENGALAMAN KERJA:
+1. PT Digital Inovasi Nusantara
+   Posisi: Frontend Developer
+   Periode: 2022 - Sekarang
+   Pencapaian:
+   - Membuat website e-commerce dan integrasi payment gateway
+   - Memperbaiki bug dan refactor kode CSS ke Tailwind
+   - Kolaborasi dengan tim backend dan UI designer
+
+2. Studio Kreasi Web
+   Posisi: Junior Web Developer
+   Periode: 2020 - 2022
+   Pencapaian:
+   - Membuat landing page responsif untuk klien UMKM
+   - Optimasi kecepatan load halaman web
+
+PORTOFOLIO:
+1. Proyek: TokoOnline Hub
+   Deskripsi: Aplikasi toko online dengan keranjang belanja real-time.
+   Tech: React, Tailwind CSS, Vite
+
+PENDIDIKAN:
+S1 Sistem Informasi, Universitas Indonesia, 2016 - 2020. IPK 3.75.
+
+BAHASA:
+Bahasa Indonesia (Penutur Asli), Bahasa Inggris (Menengah)`;
+
+    setPastedText(shortSample);
+    setActiveInputMode('text');
+  };
+
   // Main Trigger: Generate CV with Gemini AI
   const handleGenerateCV = async () => {
     setErrorMessage(null);
@@ -267,7 +315,25 @@ REFERENSI:
 
     } catch (err: any) {
       console.error('Gagal generate CV:', err);
-      setErrorMessage(err.message || 'Terjadi kesalahan tidak terduga saat menganalisis dokumen.');
+      let displayMsg = err.message || 'Terjadi kesalahan tidak terduga saat menganalisis dokumen.';
+      try {
+        if (typeof displayMsg === 'string' && displayMsg.includes('{') && displayMsg.includes('error')) {
+          const jsonMatch = displayMsg.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed?.error?.message) {
+              displayMsg =
+                parsed.error.code === 503 || parsed.error.status === 'UNAVAILABLE' || parsed.error.message.includes('high demand')
+                  ? "Server AI sedang mengalami lonjakan antrean sementara (High Demand). Silakan klik tombol 'Coba Lagi' di bawah untuk mencoba server cadangan."
+                  : parsed.error.message;
+            }
+          }
+        }
+      } catch {
+        // use raw displayMsg
+      }
+
+      setErrorMessage(displayMsg);
     } finally {
       setIsProcessing(false);
       setProcessingStage('');
@@ -287,7 +353,7 @@ REFERENSI:
             <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
               Parser Dokumen & AI CV Generator
               <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Gemini 3.8 Flash
+                Gemini Flash AI
               </span>
             </h2>
             <p className="text-xs text-slate-400">
@@ -417,20 +483,36 @@ REFERENSI:
       {/* Mode 2: Direct Plain Text Paste */}
       {activeInputMode === 'text' && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
               <ClipboardPaste className="w-3.5 h-3.5 text-amber-400" />
               Isi Teks CV / Resume:
             </label>
-            <button
-              type="button"
-              onClick={handleLoadSampleText}
-              disabled={isProcessing}
-              className="text-xs text-amber-400 hover:text-amber-300 hover:underline cursor-pointer flex items-center gap-1"
-            >
-              <Sparkles className="w-3 h-3" />
-              Muat Contoh Teks CV
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                id="btn-sample-arya"
+                onClick={handleLoadSampleText}
+                disabled={isProcessing}
+                className="text-xs text-amber-400 hover:text-amber-300 hover:underline cursor-pointer flex items-center gap-1"
+                title="Muat contoh lengkap CV Backend Engineer"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Contoh 1: Lengkap (Arya)</span>
+              </button>
+              <span className="text-slate-600">•</span>
+              <button
+                type="button"
+                id="btn-sample-short"
+                onClick={handleLoadShortSampleText}
+                disabled={isProcessing}
+                className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline cursor-pointer flex items-center gap-1"
+                title="Muat draf CV singkat untuk menguji optimasi kalimat otomatis"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Contoh 2: Uji Optimasi Otomatis (Dian)</span>
+              </button>
+            </div>
           </div>
           <textarea
             value={pastedText}
@@ -466,11 +548,33 @@ REFERENSI:
 
       {/* Error & Success Feedback Alerts */}
       {errorMessage && (
-        <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-start gap-2.5 text-xs text-rose-300">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
-          <div className="flex-1">
-            <strong className="block font-semibold">Gagal Memproses Dokumen:</strong>
-            <span>{errorMessage}</span>
+        <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-rose-300">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+            <div className="flex-1">
+              <strong className="block font-semibold">Gagal Memproses Dokumen:</strong>
+              <span>{errorMessage}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+            <button
+              type="button"
+              id="btn-retry-generate-cv"
+              onClick={handleGenerateCV}
+              disabled={isProcessing}
+              className="px-3 py-1.5 bg-rose-500 hover:bg-rose-400 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Coba Lagi</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Tutup pesan"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
@@ -489,11 +593,12 @@ REFERENSI:
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
         <div className="text-xs text-slate-400 flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>Didukung oleh Gemini 3.8 Flash (Skema JSON Terstruktur)</span>
+          <span>Didukung oleh Gemini AI Engine (Auto Failover & Retries)</span>
         </div>
 
         <button
           type="button"
+          id="btn-generate-cv"
           onClick={handleGenerateCV}
           disabled={isProcessing}
           className="w-full sm:w-auto px-6 py-3 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2 cursor-pointer active:scale-95"

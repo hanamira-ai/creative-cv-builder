@@ -82,10 +82,13 @@ export function validateCVJson(data: any): ValidationResult {
     if (!item.skill_name || typeof item.skill_name !== 'string') {
       errors.push(`core_skills[${idx}].skill_name wajib diisi string.`);
     }
-    const validLevels = ['Mahir', 'Menengah', 'Dasar'];
-    if (!validLevels.includes(item.proficiency_level)) {
+    const validLevels = [
+      'Mahir', 'Menengah', 'Dasar',
+      'Expert', 'Advanced', 'Intermediate', 'Beginner', 'Basic'
+    ];
+    if (!validLevels.some(lvl => lvl.toLowerCase() === (item.proficiency_level || '').toLowerCase())) {
       errors.push(
-        `core_skills[${idx}].proficiency_level bernilai '${item.proficiency_level}', harus salah satu dari: ${validLevels.join(', ')}.`
+        `core_skills[${idx}].proficiency_level bernilai '${item.proficiency_level}', harus salah satu tingkat kemahiran valid (Mahir/Menengah/Dasar atau Advanced/Intermediate/Basic).`
       );
     }
   });
