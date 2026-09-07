@@ -1,0 +1,6 @@
+{
+  "name": "A4 Interactive CV Generator",
+  "description": "Engine generator CV interaktif A4 dengan parser skema JSON terstruktur, live preview, serta ekspor multi-format PDF & DOCX.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
