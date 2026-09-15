@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { 
   FileDown, 
+  Download,
   FileText, 
   Printer, 
   Cpu, 
@@ -17,7 +18,7 @@ import {
   Workflow
 } from 'lucide-react';
 import { CVData } from '../types';
-import { downloadPDF, exportToPdfClient, PUPPETEER_SERVER_SCRIPT } from '../exportPdf';
+import { openInNewTabAndPrint, PUPPETEER_SERVER_SCRIPT } from '../exportPdf';
 import { generateAndDownloadDocx, generateDocxBlob, generateWordHtmlBlob, generateDocxHTML, PYTHON_DOCX_SCRIPT } from '../exportDocx';
 import { saveAs } from 'file-saver';
 
@@ -29,6 +30,7 @@ interface ExportEnginePanelProps {
   badgeTheme?: 'light' | 'dark';
   onBadgeThemeChange?: (newTheme: 'light' | 'dark') => void;
   standaloneHtmlCode: string;
+  onDownloadPdf?: () => void;
 }
 
 export const ExportEnginePanel: React.FC<ExportEnginePanelProps> = ({
@@ -38,7 +40,8 @@ export const ExportEnginePanel: React.FC<ExportEnginePanelProps> = ({
   onSidebarThemeChange,
   badgeTheme = 'dark',
   onBadgeThemeChange,
-  standaloneHtmlCode
+  standaloneHtmlCode,
+  onDownloadPdf
 }) => {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [pdfStatus, setPdfStatus] = useState<string>('');
@@ -47,18 +50,22 @@ export const ExportEnginePanel: React.FC<ExportEnginePanelProps> = ({
   const [activeCodeSnippet, setActiveCodeSnippet] = useState<'pdf-client' | 'pdf-server' | 'docx-client' | 'docx-table-html' | 'docx-python' | 'pipeline'>('pipeline');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  // Trigger Client-Side PDF Export (Target strictly id="cv-paper-target")
-  const handleExportPdfClient = async () => {
+  // Trigger Client-Side PDF Export (Unified to openInNewTabAndPrint)
+  const handleExportPDF = async () => {
+    if (onDownloadPdf) {
+      onDownloadPdf();
+      return;
+    }
     try {
       setIsExportingPdf(true);
-      setPdfStatus('Memulai rasterisasi kanvas A4 (windowWidth: 794)...');
-      const cleanName = currentCVData.personal_info.name.replace(/\s+/g, '_');
-      await downloadPDF('cv-paper-target', {
+      setPdfStatus('Membuka tab baru untuk PDF A4...');
+      const fullName = (currentCVData.personal_info as any).full_name || currentCVData.personal_info.name || 'Candidate';
+      const cleanName = fullName.trim().replace(/\s+/g, '_');
+      await openInNewTabAndPrint('cv-paper-target', {
         filename: `CV_${cleanName}_A4.pdf`,
-        quality: 2,
         onProgress: (msg) => setPdfStatus(msg)
       });
-      setPdfStatus('Berhasil diunduh!');
+      setPdfStatus('Tab cetak PDF terbuka!');
       setTimeout(() => {
         setIsExportingPdf(false);
         setPdfStatus('');
@@ -106,50 +113,51 @@ export const ExportEnginePanel: React.FC<ExportEnginePanelProps> = ({
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const clientPdfCode = `// EKSPOR PDF CLIENT-SIDE DENGAN html2canvas & jsPDF (A4 Fixed, windowWidth: 794)
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+  const clientPdfCode = `// EKSPOR NATIVE VECTOR PDF (HTML2PDF CONFIG: VECTOR & RETAIN COLOR)
+// Menjaga keutuhan ikon SVG, warna badge skill, dan format A4 desktop tanpa terpotong
 
-export async function downloadPDF(elementId = 'cv-paper-target') {
-  const element = document.getElementById(elementId);
+import html2pdf from 'html2pdf.js';
+
+function exportEditableVectorPDF() {
+  const element = document.getElementById('cv-paper-target');
   if (!element) return;
 
-  // 1. Render DOM ke Canvas dengan windowWidth: 794 (A4 Desktop 96 DPI)
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    allowTaint: true,
-    backgroundColor: '#FFFFFF',
-    windowWidth: 794, // Kunci viewport A4 desktop agar layout 2-kolom tidak collapse
-    ignoreElements: (node) => node.classList?.contains('no-print'),
-    onclone: (clonedDoc) => {
-      const cloned = clonedDoc.getElementById(elementId);
-      if (cloned) {
-        if (cloned.parentElement) cloned.parentElement.style.transform = 'none';
-        cloned.style.transform = 'none';
-        cloned.style.margin = '0';
-        cloned.style.boxShadow = 'none';
-        cloned.style.width = '210mm';
-        cloned.style.minHeight = '297mm';
-        cloned.style.display = 'grid';
-        cloned.style.gridTemplateColumns = '32% 68%';
+  const opt = {
+    margin: 0,
+    filename: \`CV_\${data.personal_info.full_name.replace(/\\s+/g, '_')}.pdf\`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: {
+      scale: 2, // Memastikan ketajaman icon dan text
+      useCORS: true,
+      logging: false,
+      letterRendering: true,
+      allowTaint: true,
+      windowWidth: 794, // Menjaga ukuran A4 Desktop agar sidebar tidak terpotong
+      onclone: (clonedDoc) => {
+        // Paksa element yang di-clone menggunakan warna HEX aman
+        const elements = clonedDoc.querySelectorAll('*');
+        elements.forEach(el => {
+          const style = window.getComputedStyle(el);
+          if (style.color && /oklch|oklab/i.test(style.color)) {
+            el.style.color = '#2C3E50';
+          }
+          if (style.backgroundColor && /oklch|oklab/i.test(style.backgroundColor)) {
+            el.style.backgroundColor = '#ffffff';
+          }
+        });
       }
-    }
-  });
+    },
+    jsPDF: {
+      unit: 'mm',
+      format: 'a4',
+      orientation: 'portrait',
+      compress: true
+    },
+    // MEMAKSA PENJAGAAN WARNA & SVG:
+    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+  };
 
-  // 2. Inisialisasi dokumen jsPDF A4 portrait (210mm x 297mm) Margin: 0
-  const pdf = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-    compress: true
-  });
-
-  const imgData = canvas.toDataURL('image/jpeg', 0.98);
-
-  // 3. Masukkan gambar pas ke halaman PDF A4 (margin 0) & unduh
-  pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-  pdf.save('Curriculum_Vitae_A4.pdf');
+  html2pdf().set(opt).from(element).save();
 }`;
 
   const clientDocxCode = `// EKSPOR DOCX DENGAN LIBRARY 'docx' (Office Open XML Asli - DXA Valid)
@@ -281,37 +289,44 @@ export function renderCvHtml(cvData, themeId = 'navy-gold') {
   return (
     <div className="space-y-6">
       {/* Top Action Banners for Live Download */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        {/* Action 1: Client PDF Export */}
+        {/* Action 1: Unified PDF Export */}
         <div className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl p-5 flex flex-col justify-between gap-4 transition-all">
           <div className="space-y-2">
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
               <FileDown className="w-5 h-5" />
             </div>
-            <h4 className="text-sm font-bold text-white">Ekspor PDF (Client-Side)</h4>
+            <h4 className="text-sm font-bold text-white">Ekspor PDF (A4)</h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Menggunakan <code className="text-amber-400">html-to-image</code> (SVG foreignObject native) & <code className="text-amber-400">jsPDF</code> langsung di browser pengguna dengan resolusi tinggi (300 DPI).
+              Format vektor murni A4 (210mm x 297mm). Seluruh teks dapat diseleksi, dicari, dan diedit di aplikasi PDF editor.
             </p>
           </div>
 
-          <button
-            onClick={handleExportPdfClient}
-            disabled={isExportingPdf}
-            className="w-full py-2.5 px-3 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
-          >
-            {isExportingPdf ? (
-              <span className="flex items-center gap-2 text-[11px] animate-pulse">
-                <Cpu className="w-3.5 h-3.5 animate-spin" />
-                {pdfStatus || 'Memproses PDF...'}
-              </span>
-            ) : (
-              <>
-                <FileDown className="w-4 h-4" />
-                <span>Unduh File .PDF</span>
-              </>
-            )}
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              id="btn-export-pdf-panel"
+              onClick={handleExportPDF}
+              disabled={isExportingPdf}
+              className="w-full py-2.5 px-3 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-amber-500/10 active:scale-95"
+            >
+              {isExportingPdf ? (
+                <span className="flex items-center gap-2 text-[11px] animate-pulse">
+                  <Cpu className="w-3.5 h-3.5 animate-spin" />
+                  {pdfStatus || 'Membuka Tab PDF...'}
+                </span>
+              ) : (
+                <>
+                  <Printer className="w-4 h-4 text-slate-950" />
+                  <span>Ekspor ke PDF (A4)</span>
+                </>
+              )}
+            </button>
+
+            <p className="text-[10px] text-slate-400 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 leading-relaxed">
+              💡 Proses ini akan membuka tab baru lalu menampilkan dialog cetak browser untuk disimpan sebagai PDF.
+            </p>
+          </div>
         </div>
 
         {/* Action 2: DOCX Export */}
@@ -360,28 +375,7 @@ export function renderCvHtml(cvData, themeId = 'navy-gold') {
           </div>
         </div>
 
-        {/* Action 3: Browser Print / PDF Native */}
-        <div className="bg-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl p-5 flex flex-col justify-between gap-4 transition-all">
-          <div className="space-y-2">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <Printer className="w-5 h-5" />
-            </div>
-            <h4 className="text-sm font-bold text-white">Print / Save PDF (Browser)</h4>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Memanfaatkan render engine native browser Chrome/Safari dengan aturan <code className="text-emerald-400">@media print</code> dan margin 10mm.
-            </p>
-          </div>
-
-          <button
-            onClick={() => window.print()}
-            className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
-          >
-            <Printer className="w-4 h-4" />
-            <span>Cetak / Save as PDF</span>
-          </button>
-        </div>
-
-        {/* Action 4: Standalone HTML File */}
+        {/* Action 3: Standalone HTML File */}
         <div className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-5 flex flex-col justify-between gap-4 transition-all">
           <div className="space-y-2">
             <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
@@ -544,7 +538,7 @@ export function renderCvHtml(cvData, themeId = 'navy-gold') {
                   : 'bg-slate-900 text-slate-400 hover:text-white'
               }`}
             >
-              Client PDF (jsPDF)
+              Client PDF (html2pdf.js)
             </button>
             <button
               onClick={() => setActiveCodeSnippet('pdf-server')}
@@ -608,11 +602,11 @@ export function renderCvHtml(cvData, themeId = 'navy-gold') {
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
               <tr>
-                <td className="py-2.5 px-3 font-semibold text-amber-400">Client-side (jsPDF + html-to-image)</td>
-                <td className="py-2.5 px-3 text-emerald-400">Tinggi (300 DPI raster)</td>
+                <td className="py-2.5 px-3 font-semibold text-amber-400">Native Browser Print Engine (Vector PDF)</td>
+                <td className="py-2.5 px-3 text-emerald-400">Pixel-Perfect (100% Font Vektor Asli)</td>
                 <td className="py-2.5 px-3 text-emerald-400">Nol (100% di browser pengguna)</td>
-                <td className="py-2.5 px-3">Sesuai tampilan DOM</td>
-                <td className="py-2.5 px-3">Aplikasi web tanpa backend berat atau offline mode.</td>
+                <td className="py-2.5 px-3">Sesuai tampilan DOM & @media print</td>
+                <td className="py-2.5 px-3">Teks dapat disunting (editable) di Adobe Acrobat / PDF-XChange, sharp, selectable text.</td>
               </tr>
               <tr>
                 <td className="py-2.5 px-3 font-semibold text-cyan-400">Server-side (Puppeteer Chromium)</td>

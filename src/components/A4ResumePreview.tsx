@@ -133,7 +133,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
 
   return (
     <div 
-      className="flex flex-col items-center transition-all duration-200"
+      className="preview-scale-wrapper flex flex-col items-center transition-all duration-200"
       style={{
         transform: `scale(${zoomLevel})`,
         transformOrigin: 'top center',
@@ -258,39 +258,34 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
         )}
       </div>
 
+      {/* Banner info dokumen multi-halaman di preview (berada DI LUAR cv-paper-target) */}
+      {pages.length > 1 && (
+        <div className="no-print w-[210mm] max-w-full flex items-center justify-between px-3.5 py-1.5 mb-3 rounded-lg bg-slate-900/90 border border-slate-700/70 text-[8pt] text-slate-300 font-mono shadow-sm">
+          <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Dokumen {pages.length} Lembar A4 (Paginasi Bersih Otomatis)
+          </span>
+          <span className="text-slate-400">Pemisahan Lembar Terjaga</span>
+        </div>
+      )}
+
       {/* =========================================================
           TARGET EKSPOR & PREVIEW DISKRIT PER LEMBAR A4
           id="cv-paper-target" sebagai container utama
+          PENTING: Hanya berisi elemen .cv-page-sheet (1 child per halaman)
           ========================================================= */}
       <div 
         id="cv-paper-target"
         className="cv-pages-wrapper flex flex-col items-center w-[210mm] max-w-full"
       >
-        {pages.map((page, pIdx) => {
-          const isFirstPage = page.pageNumber === 1;
-          const isLastPage = page.pageNumber === page.totalPages;
-
+        {pages.map((page) => {
           return (
-            <React.Fragment key={pIdx}>
-              {/* Header Info Lembar di Preview (no-print) */}
-              {pages.length > 1 && (
-                <div className="no-print w-[210mm] max-w-full flex items-center justify-between px-3 py-1 mb-1.5 text-[7.5pt] text-slate-400 font-mono">
-                  <span className="flex items-center gap-1 text-slate-300 font-semibold">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    Lembar {page.pageNumber} dari {page.totalPages}
-                  </span>
-                  <span className="text-slate-400">
-                    {isFirstPage ? 'Profil, Keahlian & Riwayat Kerja' : 'Portofolio, Pendidikan & Referensi'}
-                  </span>
-                </div>
-              )}
-
-              {/* Exact A4 Sheet per page */}
-              <div 
-                id={`cv-page-${page.pageNumber}`}
-                data-cv-page={page.pageNumber}
-                className={`cv-paper cv-page-sheet cv-layout cv-container text-slate-800 shadow-2xl relative font-sans leading-relaxed selection:bg-amber-400 selection:text-slate-900 mb-2 ${currentTheme.cssClass} badge-theme-${activeBadgeMode} sidebar-theme-${activeSidebarMode}`}
-                style={{
+            <div 
+              key={page.pageNumber}
+              id={`cv-page-${page.pageNumber}`}
+              data-cv-page={page.pageNumber}
+              className={`cv-paper cv-page-sheet cv-layout cv-container text-slate-800 shadow-2xl relative font-sans leading-relaxed selection:bg-amber-400 selection:text-slate-900 mb-6 print:mb-0 ${currentTheme.cssClass} badge-theme-${activeBadgeMode} sidebar-theme-${activeSidebarMode}`}
+              style={{
                   '--primary-navy': currentTheme.vars.primary || '#182634',
                   '--accent-gold': currentTheme.vars.accent || '#C08A3E',
                   '--text-dark': currentTheme.vars.textDark || '#2c3e50',
@@ -312,7 +307,8 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                   padding: densityStyles.paperPadding,
                   overflow: 'hidden',
                   display: 'grid',
-                  gridTemplateColumns: '32% 68%'
+                  gridTemplateColumns: '32% 68%',
+                  columnGap: '5mm'
                 } as React.CSSProperties}
               >
                 {/* =========================================================
@@ -372,7 +368,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                         {data.personal_info.name.charAt(0)}
                       </div>
                       <div className="leading-tight overflow-hidden">
-                        <div className="font-bold text-[8.5pt] truncate" style={{ color: sidebarConfig.textMain }}>
+                        <div className="font-bold text-[8.5pt]" style={{ color: sidebarConfig.textMain }}>
                           {data.personal_info.name}
                         </div>
                         <div className="text-[7pt] truncate" style={{ color: currentTheme.vars.accent }}>
@@ -392,37 +388,82 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: currentTheme.vars.accent }}></span>
                         {labels.contact}
                       </h3>
-                      <div className={`space-y-1 ${densityStyles.bodyTextSize}`} style={{ color: sidebarConfig.textMain }}>
+                      <div className={`space-y-1.5 ${densityStyles.bodyTextSize}`} style={{ color: sidebarConfig.textMain, overflow: 'visible' }}>
                         {data.personal_info.contact.phone && (
-                          <div className="flex items-center gap-2">
-                            <Phone className="w-3.5 h-3.5 shrink-0" style={{ color: sidebarConfig.iconColor }} />
-                            <span className="truncate">{data.personal_info.contact.phone}</span>
+                          <div 
+                            className="sidebar-contact-item flex items-center gap-2" 
+                            style={{ wordBreak: 'break-word', overflow: 'visible' }}
+                          >
+                            <Phone 
+                              className="w-3.5 h-3.5 shrink-0" 
+                              stroke={sidebarConfig.iconColor || "#182634"} 
+                              color={sidebarConfig.iconColor || "#182634"}
+                              fill="none"
+                              style={{ color: sidebarConfig.iconColor, stroke: sidebarConfig.iconColor }} 
+                            />
+                            <span style={{ wordBreak: 'break-word', overflow: 'visible' }}>{data.personal_info.contact.phone}</span>
                           </div>
                         )}
                         {data.personal_info.contact.email && (
-                          <div className="flex items-center gap-2">
-                            <Mail className="w-3.5 h-3.5 shrink-0" style={{ color: sidebarConfig.iconColor }} />
-                            <span className="truncate">{data.personal_info.contact.email}</span>
+                          <div 
+                            className="sidebar-contact-item flex items-center gap-2" 
+                            style={{ wordBreak: 'break-word', overflow: 'visible' }}
+                          >
+                            <Mail 
+                              className="w-3.5 h-3.5 shrink-0" 
+                              stroke={sidebarConfig.iconColor || "#182634"} 
+                              color={sidebarConfig.iconColor || "#182634"}
+                              fill="none"
+                              style={{ color: sidebarConfig.iconColor, stroke: sidebarConfig.iconColor }} 
+                            />
+                            <span style={{ wordBreak: 'break-word', overflow: 'visible' }}>{data.personal_info.contact.email}</span>
                           </div>
                         )}
                         {data.personal_info.contact.address && (
-                          <div className="flex items-start gap-2">
-                            <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: sidebarConfig.iconColor }} />
-                            <span className="leading-tight">{data.personal_info.contact.address}</span>
+                          <div 
+                            className="sidebar-contact-item flex items-start gap-2" 
+                            style={{ wordBreak: 'break-word', overflow: 'visible' }}
+                          >
+                            <MapPin 
+                              className="w-3.5 h-3.5 shrink-0 mt-0.5" 
+                              stroke={sidebarConfig.iconColor || "#182634"} 
+                              color={sidebarConfig.iconColor || "#182634"}
+                              fill="none"
+                              style={{ color: sidebarConfig.iconColor, stroke: sidebarConfig.iconColor }} 
+                            />
+                            <span className="leading-tight" style={{ wordBreak: 'break-word', overflow: 'visible' }}>{data.personal_info.contact.address}</span>
                           </div>
                         )}
                         {data.personal_info.contact.linkedin && (
-                          <div className="flex items-center gap-2">
-                            <Linkedin className="w-3.5 h-3.5 shrink-0" style={{ color: sidebarConfig.iconColor }} />
-                            <span className="truncate font-mono text-[7.2pt]">
+                          <div 
+                            className="sidebar-contact-item flex items-center gap-2" 
+                            style={{ wordBreak: 'break-word', overflow: 'visible' }}
+                          >
+                            <Linkedin 
+                              className="w-3.5 h-3.5 shrink-0" 
+                              stroke={sidebarConfig.iconColor || "#182634"} 
+                              color={sidebarConfig.iconColor || "#182634"}
+                              fill="none"
+                              style={{ color: sidebarConfig.iconColor, stroke: sidebarConfig.iconColor }} 
+                            />
+                            <span className="font-mono text-[7.2pt]" style={{ wordBreak: 'break-word', overflow: 'visible' }}>
                               {data.personal_info.contact.linkedin.replace('https://', '')}
                             </span>
                           </div>
                         )}
                         {data.personal_info.contact.github && (
-                          <div className="flex items-center gap-2">
-                            <Github className="w-3.5 h-3.5 shrink-0" style={{ color: sidebarConfig.iconColor }} />
-                            <span className="truncate font-mono text-[7.2pt]">
+                          <div 
+                            className="sidebar-contact-item flex items-center gap-2" 
+                            style={{ wordBreak: 'break-word', overflow: 'visible' }}
+                          >
+                            <Github 
+                              className="w-3.5 h-3.5 shrink-0" 
+                              stroke={sidebarConfig.iconColor || "#182634"} 
+                              color={sidebarConfig.iconColor || "#182634"}
+                              fill="none"
+                              style={{ color: sidebarConfig.iconColor, stroke: sidebarConfig.iconColor }} 
+                            />
+                            <span className="font-mono text-[7.2pt]" style={{ wordBreak: 'break-word', overflow: 'visible' }}>
                               {data.personal_info.contact.github.replace('https://', '')}
                             </span>
                           </div>
@@ -506,7 +547,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                               {item.tool}
                             </div>
                             {item.description && (
-                              <div className="text-[7pt] leading-snug mt-0.5 line-clamp-2" style={{ color: sidebarConfig.textMuted }}>
+                              <div className="text-[7pt] leading-snug mt-0.5" style={{ color: sidebarConfig.textMuted }}>
                                 {item.description}
                               </div>
                             )}
@@ -571,7 +612,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                   {page.main.showHeader && (
                     <div className="section-block pb-0.5 mb-0.5">
                       <h1 
-                        className={`${densityStyles.titleSize} font-extrabold tracking-tight leading-none`}
+                        className={`${densityStyles.titleSize} font-extrabold tracking-tight leading-tight`}
                         style={{ color: 'var(--primary-navy, #182634)' }}
                       >
                         {data.personal_info.name}
@@ -694,7 +735,9 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                                   style={{
                                     backgroundColor: badgeStyleConfig.bg,
                                     color: badgeStyleConfig.color,
-                                    borderColor: badgeStyleConfig.border
+                                    borderColor: badgeStyleConfig.border,
+                                    WebkitPrintColorAdjust: 'exact',
+                                    printColorAdjust: 'exact'
                                   }}
                                 >
                                   {t}
@@ -759,18 +802,6 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                   </footer>
                 </main>
               </div>
-
-              {/* Pemisah Batas Halaman Visual Antar Halaman A4 di Preview (no-print) */}
-              {!isLastPage && (
-                <div className="no-print my-5 flex items-center justify-center gap-3 w-[210mm] max-w-full text-xs text-slate-400 font-mono">
-                  <div className="h-px bg-slate-700/80 flex-1"></div>
-                  <div className="px-3.5 py-1 rounded-full bg-slate-800/90 border border-slate-700 text-amber-300 font-bold flex items-center gap-2 shadow-sm backdrop-blur-xs">
-                    <span>{labels.pageBreak(page.pageNumber, page.pageNumber + 1)}</span>
-                  </div>
-                  <div className="h-px bg-slate-700/80 flex-1"></div>
-                </div>
-              )}
-            </React.Fragment>
           );
         })}
       </div>

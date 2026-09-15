@@ -255,9 +255,11 @@ export function generateStandaloneCVHtml(
     #cv-paper-target,
     .cv-layout,
     .cv-container, 
-    .cv-page-container {
+    .cv-page-container,
+    .cv-page-sheet {
       display: grid !important;
       grid-template-columns: 32% 68% !important; /* 32% Sidebar, 68% Konten Utama */
+      column-gap: 5mm !important;
       width: 210mm !important;
       min-width: 210mm !important;
       max-width: 210mm !important;
@@ -380,7 +382,6 @@ export function generateStandaloneCVHtml(
     /* Main Content Styling (Kolom Kanan 68%) */
     .content,
     .main-content {
-      padding-left: 14px;
       display: flex;
       flex-direction: column;
       gap: 4mm;
@@ -896,7 +897,11 @@ export function generateStandaloneCVHtml(
       #cv-paper-target,
       .cv-layout,
       .cv-container,
-      .cv-page-container {
+      .cv-page-container,
+      .cv-page-sheet {
+        display: grid !important;
+        grid-template-columns: 32% 68% !important;
+        column-gap: 5mm !important;
         box-shadow: none !important;
         border: none !important;
         margin: 0 auto !important;
