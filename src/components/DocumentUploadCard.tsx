@@ -14,7 +14,8 @@ import {
   Check
 } from 'lucide-react';
 import { CVData } from '../types';
-import { validateCVJson } from '../validator';
+import { validateCVJson, normalizeWebsiteUrl } from '../validator';
+import { AI_PRIVACY_NOTICE } from '../privacyNotice';
 
 interface DocumentUploadCardProps {
   onCVGenerated: (data: CVData) => void;
@@ -40,6 +41,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -62,6 +64,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
   };
 
   const handleFileSelect = async (file: File) => {
+    if (!privacyAccepted) return;
     setErrorMessage(null);
     setSuccessMessage(null);
 
@@ -97,6 +100,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!privacyAccepted) return;
     setIsDragging(true);
   };
 
@@ -110,6 +114,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
+    if (!privacyAccepted) return;
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFileSelect(e.dataTransfer.files[0]);
     }
@@ -132,7 +137,7 @@ PROFESI: Senior Backend Engineer & Cloud Architect
 KONTAK:
 Telepon: +62 812-9876-5432
 Email: arya.danendra@example.com
-Domisili: Bandung, Jawa Barat, Indonesia
+Domisili: Surabaya, Jawa Timur, Indonesia
 LinkedIn: linkedin.com/in/aryadanendra
 GitHub: github.com/aryadanendra
 
@@ -205,6 +210,11 @@ REFERENSI:
     setSuccessMessage(null);
 
     // Validation
+    if (!privacyAccepted) {
+      setErrorMessage('Harap centang persetujuan privasi data terlebih dahulu.');
+      return;
+    }
+
     if (activeInputMode === 'file' && (!selectedFile || !fileBase64)) {
       setErrorMessage('Harap pilih atau unggah berkas CV (PDF, DOCX, atau TXT) terlebih dahulu.');
       return;
@@ -227,9 +237,22 @@ REFERENSI:
 
       const langLabel = targetLanguage === 'en' ? 'English' : 'Bahasa Indonesia';
 
+      const resolveUploadMimeType = (file: File): string => {
+        if (file.type && file.type !== 'application/octet-stream') {
+          return file.type;
+        }
+        const lowerName = file.name.toLowerCase();
+        if (lowerName.endsWith('.txt')) return 'text/plain';
+        if (lowerName.endsWith('.pdf')) return 'application/pdf';
+        if (lowerName.endsWith('.docx')) {
+          return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        }
+        return file.type || 'application/octet-stream';
+      };
+
       if (activeInputMode === 'file' && selectedFile) {
         payload.fileBase64 = fileBase64;
-        payload.mimeType = selectedFile.type || 'application/octet-stream';
+        payload.mimeType = resolveUploadMimeType(selectedFile);
         payload.fileName = selectedFile.name;
         setProcessingStage(`Menganalisis berkas ${selectedFile.name} dengan Gemini AI (Target: ${langLabel})...`);
       } else {
@@ -248,13 +271,37 @@ REFERENSI:
 
       setProcessingStage('Mengekstrak entitas data & memetakan ke skema JSON A4...');
 
-      const result = await response.json();
+      let result: any = null;
+      try {
+        result = await response.json();
+      } catch {
+        result = null;
+      }
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Gagal memproses dokumen dengan Gemini API.');
+      if (response.status === 429) {
+        throw new Error(
+          result?.error || 'Terlalu banyak permintaan. Coba lagi dalam beberapa menit.'
+        );
+      }
+
+      if (response.status === 413) {
+        throw new Error(
+          result?.error || 'Ukuran berkas terlalu besar untuk diproses. Maksimal ukuran berkas adalah 20MB.'
+        );
+      }
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || 'Gagal memproses dokumen dengan Gemini API.');
       }
 
       setProcessingStage('Memvalidasi data & memperbarui Live Preview A4...');
+
+      // Perlakukan output Gemini sebagai data tidak tepercaya: normalisasi & validasi URL website
+      if (result.data?.personal_info?.contact) {
+        const rawWebsite = result.data.personal_info.contact.website;
+        const websiteCheck = normalizeWebsiteUrl(rawWebsite);
+        result.data.personal_info.contact.website = websiteCheck.isValid ? websiteCheck.normalizedUrl : '';
+      }
 
       const validation = validateCVJson(result.data);
       if (!validation.isValid && validation.errors.length > 0) {
@@ -355,6 +402,25 @@ REFERENSI:
         </div>
       </div>
 
+      {/* Pemberitahuan Privasi & Persetujuan Wajib */}
+      <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+        <div className="flex items-start gap-2.5 text-xs text-slate-300 leading-relaxed">
+          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <p>{AI_PRIVACY_NOTICE}</p>
+        </div>
+        <label className="flex items-center gap-2.5 text-xs font-semibold text-white cursor-pointer select-none pt-1 border-t border-slate-800/80">
+          <input
+            type="checkbox"
+            id="privacy-consent-main"
+            checked={privacyAccepted}
+            onChange={(e) => setPrivacyAccepted(e.target.checked)}
+            disabled={isProcessing}
+            className="rounded border-slate-700 bg-slate-950 text-amber-500 focus:ring-amber-500/20 w-4 h-4 cursor-pointer accent-amber-500"
+          />
+          <span>Saya memahami dan menyetujui pemrosesan ini</span>
+        </label>
+      </div>
+
       {/* Hidden native input */}
       <input
         ref={fileInputRef}
@@ -362,6 +428,7 @@ REFERENSI:
         id="document-file-input"
         accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
         onChange={handleInputChange}
+        disabled={!privacyAccepted || isProcessing}
         className="hidden"
       />
 
@@ -374,11 +441,17 @@ REFERENSI:
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-5 sm:p-7 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-2.5 ${
-                isDragging
-                  ? 'border-amber-400 bg-amber-500/10'
-                  : 'border-slate-700/80 bg-slate-950/60 hover:border-amber-500/50 hover:bg-slate-950'
+              onClick={() => {
+                if (!privacyAccepted || isProcessing) return;
+                fileInputRef.current?.click();
+              }}
+              aria-disabled={!privacyAccepted || isProcessing}
+              className={`border-2 border-dashed rounded-xl p-5 sm:p-7 text-center transition-all flex flex-col items-center justify-center gap-2.5 ${
+                !privacyAccepted || isProcessing
+                  ? 'border-slate-800 bg-slate-950/40 opacity-55 cursor-not-allowed'
+                  : isDragging
+                    ? 'border-amber-400 bg-amber-500/10 cursor-pointer'
+                    : 'border-slate-700/80 bg-slate-950/60 hover:border-amber-500/50 hover:bg-slate-950 cursor-pointer'
               }`}
             >
               <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-amber-400">
@@ -413,7 +486,8 @@ REFERENSI:
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-2.5 py-1.5 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition-colors cursor-pointer"
+                  disabled={!privacyAccepted || isProcessing}
+                  className="px-2.5 py-1.5 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg border border-slate-700 transition-colors cursor-pointer"
                 >
                   Ganti Berkas
                 </button>
@@ -461,7 +535,7 @@ REFERENSI:
             rows={4}
             value={pastedText}
             onChange={(e) => setPastedText(e.target.value)}
-            placeholder="Contoh: Nama: Budi Santoso, Jabatan: Fullstack Developer, Kontak: budi@gmail.com, Pengalaman kerja di PT ABC (2020-2023) mengembangkan microservices..."
+            placeholder="Contoh: Nama: Budi Santoso, Jabatan: Fullstack Developer, Kontak: budi@contoh-email.id, Pengalaman kerja di PT ABC (2020-2023) mengembangkan microservices..."
             className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-amber-500 resize-y font-mono leading-relaxed"
           />
         </div>
@@ -523,16 +597,16 @@ REFERENSI:
             type="button"
             id="btn-generate-cv-main"
             onClick={handleGenerateCV}
-            disabled={isProcessing || (activeInputMode === 'file' ? !selectedFile : !pastedText.trim())}
-            className={`w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md ${
-              isProcessing
-                ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
+            disabled={!privacyAccepted || isProcessing || (activeInputMode === 'file' ? !selectedFile : !pastedText.trim())}
+            className={`w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-md ${
+              !privacyAccepted || isProcessing
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
                 : activeInputMode === 'file'
                   ? selectedFile
-                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-amber-500/20 active:scale-[0.98]'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-amber-500/20 active:scale-[0.98] cursor-pointer'
                     : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-800'
                   : pastedText.trim()
-                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-amber-500/20 active:scale-[0.98]'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-amber-500/20 active:scale-[0.98] cursor-pointer'
                     : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-800'
             }`}
           >
@@ -587,7 +661,8 @@ REFERENSI:
             <button
               type="button"
               onClick={handleGenerateCV}
-              className="px-2.5 py-1 bg-rose-900 hover:bg-rose-800 text-white rounded text-xs font-semibold transition-colors cursor-pointer"
+              disabled={!privacyAccepted || isProcessing}
+              className="px-2.5 py-1 bg-rose-900 hover:bg-rose-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded text-xs font-semibold transition-colors cursor-pointer"
             >
               Coba Lagi
             </button>

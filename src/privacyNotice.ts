@@ -1,0 +1,2 @@
+export const AI_PRIVACY_NOTICE =
+  'Privasi data: teks atau berkas CV yang Anda kirim diteruskan ke layanan Google Gemini API untuk diubah menjadi CV terstruktur. Aplikasi ini tidak menyimpan isi CV Anda. Pada layanan Gemini API tingkat gratis, Google dapat menggunakan dan meninjau (termasuk oleh peninjau manusia) data tersebut untuk meningkatkan produknya. Jangan unggah data sensitif seperti NIK, nomor paspor, atau data keuangan.';

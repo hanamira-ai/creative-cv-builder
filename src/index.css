@@ -143,30 +143,11 @@
   print-color-adjust: exact !important;
 }
 
-/* Sidebar Dark Theme Overrides */
-.sidebar.sidebar-dark {
-  color: #FFFFFF !important;
-}
-
-.sidebar.sidebar-dark .section-header,
-.sidebar.sidebar-dark .section-title {
-  color: #FFFFFF !important;
-}
-
+/* Sidebar Theme Inheritance (warna diatur dari objek tema via inline style) */
 .sidebar.sidebar-dark a,
 .sidebar.sidebar-dark span,
 .sidebar.sidebar-dark div {
   color: inherit;
-}
-
-/* Sidebar Light Theme Overrides */
-.sidebar.sidebar-light {
-  color: #1E293B !important;
-}
-
-.sidebar.sidebar-light .section-header,
-.sidebar.sidebar-light .section-title {
-  color: var(--primary-navy, #182634) !important;
 }
 
 /* Foto Profil Lingkaran (Circle) */
@@ -209,48 +190,6 @@
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
-}
-
-/* Theme 1: Navy & Gold Badge Modes */
-.theme-navy-gold.badge-theme-light,
-.theme-navy-gold .badge-theme-light {
-  --badge-bg: rgba(192, 138, 62, 0.14);
-  --badge-color: #182634;
-  --badge-border: #C08A3E;
-}
-.theme-navy-gold.badge-theme-dark,
-.theme-navy-gold .badge-theme-dark {
-  --badge-bg: #182634;
-  --badge-color: #FFFFFF;
-  --badge-border: #C08A3E;
-}
-
-/* Theme 2: Emerald & Slate Badge Modes */
-.theme-emerald-slate.badge-theme-light,
-.theme-emerald-slate .badge-theme-light {
-  --badge-bg: rgba(5, 150, 105, 0.14);
-  --badge-color: #064E3B;
-  --badge-border: #059669;
-}
-.theme-emerald-slate.badge-theme-dark,
-.theme-emerald-slate .badge-theme-dark {
-  --badge-bg: #064E3B;
-  --badge-color: #FFFFFF;
-  --badge-border: #10B981;
-}
-
-/* Theme 3: Charcoal & Orange Badge Modes */
-.theme-charcoal-orange.badge-theme-light,
-.theme-charcoal-orange .badge-theme-light {
-  --badge-bg: rgba(234, 88, 12, 0.14);
-  --badge-color: #1E1E24;
-  --badge-border: #EA580C;
-}
-.theme-charcoal-orange.badge-theme-dark,
-.theme-charcoal-orange .badge-theme-dark {
-  --badge-bg: #1E1E24;
-  --badge-color: #FFFFFF;
-  --badge-border: #F97316;
 }
 
 /* Timeline Pengalaman Kerja */

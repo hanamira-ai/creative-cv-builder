@@ -22,6 +22,8 @@ import { openInNewTabAndPrint, PUPPETEER_SERVER_SCRIPT } from '../exportPdf';
 import { generateAndDownloadDocx, generateDocxBlob, generateWordHtmlBlob, generateDocxHTML, PYTHON_DOCX_SCRIPT } from '../exportDocx';
 import { saveAs } from 'file-saver';
 
+export const SHOW_HTML_EXPORT = false;
+
 interface ExportEnginePanelProps {
   currentCVData: CVData;
   selectedThemeId: string;
@@ -289,7 +291,7 @@ export function renderCvHtml(cvData, themeId = 'navy-gold') {
   return (
     <div className="space-y-6">
       {/* Top Action Banners for Live Download */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className={`grid grid-cols-1 ${SHOW_HTML_EXPORT ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4`}>
         
         {/* Action 1: Unified PDF Export */}
         <div className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl p-5 flex flex-col justify-between gap-4 transition-all">
@@ -376,35 +378,37 @@ export function renderCvHtml(cvData, themeId = 'navy-gold') {
         </div>
 
         {/* Action 3: Standalone HTML File */}
-        <div className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-5 flex flex-col justify-between gap-4 transition-all">
-          <div className="space-y-2">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-              <FileCode2 className="w-5 h-5" />
+        {SHOW_HTML_EXPORT && (
+          <div className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-5 flex flex-col justify-between gap-4 transition-all">
+            <div className="space-y-2">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <FileCode2 className="w-5 h-5" />
+              </div>
+              <h4 className="text-sm font-bold text-white">HTML5 Standalone</h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                File HTML5 tunggal independen berisi CSS variables tema & styling cetak tanpa ketergantungan library eksternal.
+              </p>
             </div>
-            <h4 className="text-sm font-bold text-white">HTML5 Standalone</h4>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              File HTML5 tunggal independen berisi CSS variables tema & styling cetak tanpa ketergantungan library eksternal.
-            </p>
-          </div>
 
-          <button
-            onClick={() => {
-              const blob = new Blob([standaloneHtmlCode], { type: 'text/html;charset=utf-8' });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = `CV_${currentCVData.personal_info.name.replace(/\s+/g, '_')}_A4.html`;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              URL.revokeObjectURL(url);
-            }}
-            className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
-          >
-            <FileCode2 className="w-4 h-4" />
-            <span>Unduh File .HTML</span>
-          </button>
-        </div>
+            <button
+              onClick={() => {
+                const blob = new Blob([standaloneHtmlCode], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `CV_${currentCVData.personal_info.name.replace(/\s+/g, '_')}_A4.html`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+              }}
+              className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <FileCode2 className="w-4 h-4" />
+              <span>Unduh File .HTML</span>
+            </button>
+          </div>
+        )}
 
       </div>
 

@@ -7,12 +7,123 @@ import mammoth from "mammoth";
 
 dotenv.config();
 
+function parsePositiveIntEnv(envValue: string | undefined, fallback: number): number {
+  const parsed = Number(envValue);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function parseNonNegativeIntEnv(envValue: string | undefined, fallback: number): number {
+  if (envValue === undefined || envValue.trim() === "") return fallback;
+  const parsed = Number(envValue);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
+}
+
+// Konfigurasi batas laju (Rate Limit) endpoint /api/parse-cv, proxy & ukuran berkas
+const TRUST_PROXY_HOPS = parseNonNegativeIntEnv(process.env.TRUST_PROXY_HOPS, 1);
+const RATE_LIMIT_PER_MINUTE = parsePositiveIntEnv(process.env.RATE_LIMIT_PER_MINUTE, 5);
+const RATE_LIMIT_PER_DAY = parsePositiveIntEnv(process.env.RATE_LIMIT_PER_DAY, 30);
+const RATE_LIMIT_GLOBAL_PER_DAY = parsePositiveIntEnv(process.env.RATE_LIMIT_GLOBAL_PER_DAY, 300);
+const ONE_MINUTE_MS = 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const RATE_LIMIT_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
+const MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024; // 20MB setelah dekode
+
+interface IpRateEntry {
+  minuteCount: number;
+  minuteResetAt: number;
+  dayCount: number;
+  dayResetAt: number;
+}
+
+const ipRateLimitMap = new Map<string, IpRateEntry>();
+let globalDailyRateState = {
+  count: 0,
+  resetAt: Date.now() + ONE_DAY_MS,
+};
+
+// Bersihkan entri IP yang sudah kedaluwarsa secara berkala agar memori tidak membengkak
+const rateLimitCleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of ipRateLimitMap.entries()) {
+    if (now >= entry.dayResetAt && now >= entry.minuteResetAt) {
+      ipRateLimitMap.delete(ip);
+    }
+  }
+}, RATE_LIMIT_CLEANUP_INTERVAL_MS);
+rateLimitCleanupTimer.unref();
+
+function parseCvRateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const now = Date.now();
+  const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+
+  if (now >= globalDailyRateState.resetAt) {
+    globalDailyRateState = {
+      count: 0,
+      resetAt: now + ONE_DAY_MS,
+    };
+  }
+
+  let entry = ipRateLimitMap.get(clientIp);
+  if (!entry) {
+    entry = {
+      minuteCount: 0,
+      minuteResetAt: now + ONE_MINUTE_MS,
+      dayCount: 0,
+      dayResetAt: now + ONE_DAY_MS,
+    };
+    ipRateLimitMap.set(clientIp, entry);
+  } else {
+    if (now >= entry.minuteResetAt) {
+      entry.minuteCount = 0;
+      entry.minuteResetAt = now + ONE_MINUTE_MS;
+    }
+    if (now >= entry.dayResetAt) {
+      entry.dayCount = 0;
+      entry.dayResetAt = now + ONE_DAY_MS;
+    }
+  }
+
+  if (entry.minuteCount >= RATE_LIMIT_PER_MINUTE) {
+    const retryAfterSec = Math.max(1, Math.ceil((entry.minuteResetAt - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfterSec));
+    return res.status(429).json({
+      success: false,
+      error: "Terlalu banyak permintaan. Coba lagi dalam beberapa menit.",
+    });
+  }
+
+  if (entry.dayCount >= RATE_LIMIT_PER_DAY) {
+    const retryAfterSec = Math.max(1, Math.ceil((entry.dayResetAt - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfterSec));
+    return res.status(429).json({
+      success: false,
+      error: "Batas pemakaian harian Anda telah tercapai. Silakan coba lagi besok.",
+    });
+  }
+
+  if (globalDailyRateState.count >= RATE_LIMIT_GLOBAL_PER_DAY) {
+    const retryAfterSec = Math.max(1, Math.ceil((globalDailyRateState.resetAt - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfterSec));
+    return res.status(429).json({
+      success: false,
+      error: "Layanan sedang sangat sibuk hari ini. Silakan coba lagi besok.",
+    });
+  }
+
+  // Penghitung per IP tetap menghitung seluruh permintaan; penghitung global hanya bertambah tepat sebelum Gemini dipanggil
+  entry.minuteCount += 1;
+  entry.dayCount += 1;
+
+  return next();
+}
+
 const app = express();
+app.set("trust proxy", TRUST_PROXY_HOPS > 0 ? TRUST_PROXY_HOPS : false);
 const PORT = 3000;
 
-// Body parsing with support for large base64 file payloads
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+// Body parsing with support for up to 20MB base64 file payloads (~27MB encoded)
+app.use(express.json({ limit: "30mb" }));
+app.use(express.urlencoded({ extended: true, limit: "30mb" }));
 
 // Lazy initialization for Google Gen AI client
 let aiClient: GoogleGenAI | null = null;
@@ -60,7 +171,8 @@ const cvDataSchema = {
             email: { type: Type.STRING, description: "Alamat email profesional" },
             address: { type: Type.STRING, description: "Domisili kota / provinsi / negara" },
             github: { type: Type.STRING, description: "URL atau username GitHub (opsional)" },
-            linkedin: { type: Type.STRING, description: "URL atau username LinkedIn (opsional)" }
+            linkedin: { type: Type.STRING, description: "URL atau username LinkedIn (opsional)" },
+            website: { type: Type.STRING, description: "URL website atau portofolio pribadi selain LinkedIn dan GitHub, kosongkan jika tidak ada" }
           },
           required: ["phone", "email", "address"]
         },
@@ -315,8 +427,23 @@ function formatFriendlyErrorMessage(err: any): string {
   return rawMsg;
 }
 
+function resolveServerMimeType(rawMimeType?: string, rawFileName?: string): string {
+  const normalizedMime = typeof rawMimeType === "string" ? rawMimeType.trim().toLowerCase() : "";
+  const lowerName = typeof rawFileName === "string" ? rawFileName.trim().toLowerCase() : "";
+
+  if (!normalizedMime || normalizedMime === "application/octet-stream") {
+    if (lowerName.endsWith(".pdf")) return "application/pdf";
+    if (lowerName.endsWith(".docx")) {
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    }
+    if (lowerName.endsWith(".txt")) return "text/plain";
+  }
+
+  return normalizedMime;
+}
+
 // Document Parsing & CV Generation endpoint
-app.post("/api/parse-cv", async (req, res) => {
+app.post("/api/parse-cv", parseCvRateLimiter, async (req, res) => {
   try {
     const {
       fileBase64,
@@ -326,7 +453,7 @@ app.post("/api/parse-cv", async (req, res) => {
       optimizePhrasing = true,
       target_language,
       targetLanguage
-    } = req.body;
+    } = req.body || {};
 
     // Normalize target language: 'id' or 'en' (default: 'id')
     const rawLang = String(target_language || targetLanguage || "id").trim().toLowerCase();
@@ -340,22 +467,68 @@ app.post("/api/parse-cv", async (req, res) => {
       });
     }
 
+    const resolvedMimeType = resolveServerMimeType(mimeType, fileName);
+    const isDocx =
+      resolvedMimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const isPdf = resolvedMimeType === "application/pdf";
+    const isPlainText =
+      resolvedMimeType === "text/plain" || resolvedMimeType.startsWith("text/plain;");
+
+    let decodedFileBuffer: Buffer | null = null;
+    if (fileBase64) {
+      if (typeof fileBase64 !== "string") {
+        return res.status(400).json({
+          success: false,
+          error: "Data berkas tidak valid."
+        });
+      }
+
+      const cleanedBase64 = fileBase64.replace(/^data:[^;]+;base64,/, "").replace(/\s+/g, "");
+      decodedFileBuffer = Buffer.from(cleanedBase64, "base64");
+
+      if (decodedFileBuffer.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "Berkas kosong atau format Base64 tidak valid."
+        });
+      }
+
+      if (decodedFileBuffer.length > MAX_UPLOAD_SIZE_BYTES) {
+        return res.status(400).json({
+          success: false,
+          error: "Ukuran berkas melebihi batas maksimal 20MB."
+        });
+      }
+
+      if (!isPdf && !isDocx && !isPlainText) {
+        return res.status(400).json({
+          success: false,
+          error: "Jenis berkas tidak didukung. Hanya file PDF (.pdf), DOCX (.docx), atau teks biasa (.txt) yang diizinkan."
+        });
+      }
+    }
+
     const ai = getGenAI();
     let promptContents: any[] = [];
     let extractedDocText = "";
 
     // Handle DOCX files
-    const isDocx =
-      mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-      (fileName && fileName.toLowerCase().endsWith(".docx"));
-
-    if (fileBase64 && isDocx) {
+    if (decodedFileBuffer && isDocx) {
       try {
-        const docBuffer = Buffer.from(fileBase64, "base64");
-        const docxResult = await mammoth.extractRawText({ buffer: docBuffer });
+        const docxResult = await mammoth.extractRawText({ buffer: decodedFileBuffer });
         extractedDocText = docxResult.value || "";
+        if (!extractedDocText.trim()) {
+          return res.status(400).json({
+            success: false,
+            error: "Berkas DOCX tidak mengandung teks yang dapat diekstrak."
+          });
+        }
       } catch (err: any) {
-        console.warn("Gagal mengekstrak teks DOCX dengan mammoth:", err);
+        console.warn(`Gagal mengekstrak teks DOCX dengan mammoth: ${err?.message || "Unknown error"}`);
+        return res.status(400).json({
+          success: false,
+          error: "Gagal membaca isi berkas DOCX. Pastikan file .docx tidak rusak atau terenkripsi."
+        });
       }
     }
 
@@ -373,7 +546,7 @@ ${
 - Pada poin pengalaman kerja (highlights), WAJIB gunakan action verbs profesional di awal setiap kalimat (contoh: "Managed", "Developed", "Spearheaded", "Implemented", "Designed", "Architected", "Engineered", "Optimized", "Streamlined", "Accelerated", "Formulated", "Delivered").
 - PENTING / TETAP PERTAHANKAN:
   * Nama instansi, universitas, sekolah (contoh: "Institut Teknologi Bandung (ITB)", "Universitas Indonesia").
-  * Nama perusahaan atau organisasi tempat bekerja (contoh: "PT Fintek Inovasi Nusantara", "Mizumoto Photography").
+  * Nama perusahaan atau organisasi tempat bekerja (contoh: "PT Fintek Inovasi Nusantara", "PT Karya Kreatif Nusantara").
   * Nama gelar asli jika merupakan singkatan lokal (misal: "S.Kom.", "S.T.") atau padanan internasional jika dicantumkan.
   * Istilah teknis, bahasa pemrograman, framework, dan tools teknis (Tech Stack) sesuai bentuk aslinya tanpa diterjemahkan secara kaku (contoh: Go, TypeScript, PostgreSQL, Docker, Kubernetes, AWS, React, Tailwind CSS).
 - Tingkat kemahiran 'core_skills' (proficiency_level) HARUS menggunakan Bahasa Inggris standar: 'Advanced', 'Intermediate', atau 'Basic' (atau 'Expert').
@@ -388,7 +561,7 @@ ${
 
 PANDUAN EKSTRAKSI & OPTIMASI DATA:
 1. INFORMASI PRIBADI:
-   - Ekstrak Nama Lengkap, Gelar/Posisi Profesional, dan Kontak (Telepon, Email, Domisili, LinkedIn, GitHub jika ada).
+   - Ekstrak Nama Lengkap, Gelar/Posisi Profesional, dan Kontak (Telepon, Email, Domisili, LinkedIn, GitHub, serta Website/Portofolio pribadi jika ada — URL website atau portofolio pribadi selain LinkedIn dan GitHub, kosongkan jika tidak ada).
    - Buat atau poles 'summary' (Ringkasan Eksekutif) menjadi 2-4 kalimat yang profesional, padat, dan berbobot dalam ${isEn ? "Bahasa Inggris" : "Bahasa Indonesia"}. Jika summary di berkas sumber kosong atau sangat singkat, formulasikan ringkasan eksekutif profesional yang merangkum keahlian dan riwayat kandidat secara elegan.
 2. KEAHLIAN & TECH STACK:
    - Petakan keahlian ke 'core_skills' dengan tingkat kemahiran (${isEn ? "'Advanced', 'Intermediate', atau 'Basic'" : "'Mahir', 'Menengah', atau 'Dasar'"}).
@@ -426,21 +599,21 @@ PERATURAN MUTLAK:
           text: `${systemInstructionText}\n\nBerikut adalah isi teks yang diekstrak dari dokumen DOCX (${fileName || "dokumen"}):\n\n${extractedDocText}${langInstructionSuffix}`
         }
       ];
-    } else if (fileBase64 && mimeType === "application/pdf") {
+    } else if (decodedFileBuffer && isPdf) {
       // PDF natively handled by Gemini Flash
       promptContents = [
         {
           inlineData: {
             mimeType: "application/pdf",
-            data: fileBase64
+            data: decodedFileBuffer.toString("base64")
           }
         },
         {
           text: `${systemInstructionText}\n\nEkstrak seluruh informasi CV dari dokumen PDF terlampir di atas ke dalam format JSON skema yang ditentukan.${langInstructionSuffix}`
         }
       ];
-    } else if (fileBase64 && mimeType?.startsWith("text/")) {
-      const textBuffer = Buffer.from(fileBase64, "base64").toString("utf-8");
+    } else if (decodedFileBuffer && isPlainText) {
+      const textBuffer = decodedFileBuffer.toString("utf-8");
       promptContents = [
         {
           text: `${systemInstructionText}\n\nBerikut adalah teks dokumen CV:\n\n${textBuffer}${langInstructionSuffix}`
@@ -459,15 +632,45 @@ PERATURAN MUTLAK:
       });
     }
 
+    const nowBeforeGemini = Date.now();
+    if (nowBeforeGemini >= globalDailyRateState.resetAt) {
+      globalDailyRateState = {
+        count: 0,
+        resetAt: nowBeforeGemini + ONE_DAY_MS,
+      };
+    }
+    if (globalDailyRateState.count >= RATE_LIMIT_GLOBAL_PER_DAY) {
+      const retryAfterSec = Math.max(1, Math.ceil((globalDailyRateState.resetAt - nowBeforeGemini) / 1000));
+      res.setHeader("Retry-After", String(retryAfterSec));
+      return res.status(429).json({
+        success: false,
+        error: "Layanan sedang sangat sibuk hari ini. Silakan coba lagi besok.",
+      });
+    }
+    globalDailyRateState.count += 1;
+
     const { parsedJson, usedModel } = await generateCVWithFallback(
       ai,
       promptContents,
       cvDataSchema
     );
 
-    // Ensure language is firmly set
+    // Ensure language is firmly set and sanitize untrusted website URL from Gemini output
     if (parsedJson) {
       parsedJson.language = targetLang;
+      const rawWebsite = parsedJson?.personal_info?.contact?.website;
+      if (typeof rawWebsite === "string" && rawWebsite.trim()) {
+        const cleaned = rawWebsite.replace(/[\u0000-\u001F\u007F]/g, "").trim();
+        if (/^(javascript|data|vbscript|file|about|blob|mailto|tel):/i.test(cleaned)) {
+          parsedJson.personal_info.contact.website = "";
+        } else if (/^https?:\/\//i.test(cleaned)) {
+          parsedJson.personal_info.contact.website = cleaned;
+        } else if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(cleaned)) {
+          parsedJson.personal_info.contact.website = "";
+        } else {
+          parsedJson.personal_info.contact.website = `https://${cleaned}`;
+        }
+      }
     }
 
     return res.json({
@@ -478,13 +681,26 @@ PERATURAN MUTLAK:
       message: `Dokumen CV berhasil dianalisis dan dipetakan ke skema JSON A4 (${isEn ? "English" : "Bahasa Indonesia"}).`
     });
   } catch (error: any) {
-    console.error("Error in /api/parse-cv:", error);
+    const errorStatus = error?.status || error?.statusCode || 500;
+    const errorMessage = error?.message || "Unknown error";
+    console.error(`Error in /api/parse-cv (status: ${errorStatus}): ${errorMessage}`);
     const friendlyMsg = formatFriendlyErrorMessage(error);
     return res.status(500).json({
       success: false,
       error: friendlyMsg
     });
   }
+});
+
+// Middleware penanganan payload melebihi batas express.json (30mb)
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err?.type === "entity.too.large" || err?.status === 413) {
+    return res.status(413).json({
+      success: false,
+      error: "Ukuran berkas terlalu besar untuk diproses. Maksimal ukuran berkas adalah 20MB."
+    });
+  }
+  return next(err);
 });
 
 // Vite Middleware for development & Static server for production

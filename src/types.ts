@@ -8,6 +8,7 @@ export interface ContactInfo {
   address: string;
   github?: string;
   linkedin?: string;
+  website?: string;
 }
 
 export interface PersonalInfo {

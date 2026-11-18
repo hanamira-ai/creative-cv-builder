@@ -10,9 +10,11 @@ import {
   Sun,
   Layers,
   Sliders,
-  CheckCircle2
+  CheckCircle2,
+  Globe
 } from 'lucide-react';
 import { CVData } from '../types';
+import { normalizeWebsiteUrl, formatWebsiteDisplay } from '../validator';
 import { CV_THEMES } from '../themes';
 import { 
   partitionCvData, 
@@ -371,7 +373,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                         <div className="font-bold text-[8.5pt]" style={{ color: sidebarConfig.textMain }}>
                           {data.personal_info.name}
                         </div>
-                        <div className="text-[7pt] truncate" style={{ color: currentTheme.vars.accent }}>
+                        <div className="text-[7pt] truncate" style={{ color: sidebarConfig.iconColor }}>
                           {labels.continuedQual}
                         </div>
                       </div>
@@ -383,9 +385,9 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                     <div className={`section-block ${densityStyles.itemSpacing}`}>
                       <h3 
                         className={`section-header ${densityStyles.headingTextSize} font-bold uppercase tracking-wider flex items-center gap-1.5`}
-                        style={{ color: sidebarConfig.headingColor, borderBottomColor: currentTheme.vars.accent }}
+                        style={{ color: sidebarConfig.headingColor, borderBottomColor: sidebarConfig.iconColor }}
                       >
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: currentTheme.vars.accent }}></span>
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: sidebarConfig.iconColor }}></span>
                         {labels.contact}
                       </h3>
                       <div className={`space-y-1.5 ${densityStyles.bodyTextSize}`} style={{ color: sidebarConfig.textMain, overflow: 'visible' }}>
@@ -468,6 +470,38 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                             </span>
                           </div>
                         )}
+                        {(() => {
+                          const websiteCheck = normalizeWebsiteUrl(data.personal_info.contact.website);
+                          if (!websiteCheck.isValid || !websiteCheck.normalizedUrl) return null;
+                          return (
+                            <div 
+                              className="sidebar-contact-item flex items-center gap-2" 
+                              style={{ wordBreak: 'break-word', overflow: 'visible' }}
+                            >
+                              <Globe 
+                                className="w-3.5 h-3.5 shrink-0" 
+                                stroke={sidebarConfig.iconColor || "#182634"} 
+                                color={sidebarConfig.iconColor || "#182634"}
+                                fill="none"
+                                style={{ color: sidebarConfig.iconColor, stroke: sidebarConfig.iconColor }} 
+                              />
+                              <a
+                                href={websiteCheck.normalizedUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-mono text-[7.2pt]"
+                                style={{
+                                  color: 'inherit',
+                                  textDecoration: 'none',
+                                  wordBreak: 'break-word',
+                                  overflow: 'visible'
+                                }}
+                              >
+                                {formatWebsiteDisplay(websiteCheck.normalizedUrl)}
+                              </a>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -477,9 +511,9 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                     <div className={`section-block ${densityStyles.itemSpacing}`}>
                       <h3 
                         className={`section-header ${densityStyles.headingTextSize} font-bold uppercase tracking-wider flex items-center gap-1.5`}
-                        style={{ color: sidebarConfig.headingColor, borderBottomColor: currentTheme.vars.accent }}
+                        style={{ color: sidebarConfig.headingColor, borderBottomColor: sidebarConfig.iconColor }}
                       >
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: currentTheme.vars.accent }}></span>
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: sidebarConfig.iconColor }}></span>
                         {labels.coreSkills}
                       </h3>
                       <div className="space-y-1.5">
@@ -489,7 +523,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                               <span className="leading-tight font-semibold break-words flex-1">{skill.skill_name}</span>
                               <span 
                                 className="uppercase font-bold text-[6.5pt] tracking-wider shrink-0 mt-0.5"
-                                style={{ color: currentTheme.vars.accent }}
+                                style={{ color: sidebarConfig.iconColor }}
                               >
                                 {skill.proficiency_level}
                               </span>
@@ -517,9 +551,9 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                     <div className={`section-block ${densityStyles.itemSpacing}`}>
                       <h3 
                         className={`section-header ${densityStyles.headingTextSize} font-bold uppercase tracking-wider flex items-center gap-1.5`}
-                        style={{ color: sidebarConfig.headingColor, borderBottomColor: currentTheme.vars.accent }}
+                        style={{ color: sidebarConfig.headingColor, borderBottomColor: sidebarConfig.iconColor }}
                       >
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: currentTheme.vars.accent }}></span>
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: sidebarConfig.iconColor }}></span>
                         {page.pageNumber > 1 ? labels.techStackCont : labels.techStack}
                       </h3>
                       <div className="space-y-1.5">
@@ -531,13 +565,13 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                           >
                             <div 
                               className="flex justify-between items-start font-bold gap-1" 
-                              style={{ color: activeSidebarMode === 'dark' ? currentTheme.vars.accent : currentTheme.vars.primary }}
+                              style={{ color: activeSidebarMode === 'dark' ? sidebarConfig.iconColor : currentTheme.vars.primary }}
                             >
                               <span className="leading-tight break-words flex-1">{item.category}</span>
                               {item.level && (
                                 <span 
                                   className="uppercase font-bold text-[6.5pt] tracking-wider shrink-0"
-                                  style={{ color: currentTheme.vars.accent }}
+                                  style={{ color: sidebarConfig.iconColor }}
                                 >
                                   {item.level}
                                 </span>
@@ -562,9 +596,9 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                     <div className={`section-block ${densityStyles.itemSpacing}`}>
                       <h3 
                         className={`section-header ${densityStyles.headingTextSize} font-bold uppercase tracking-wider flex items-center gap-1.5`}
-                        style={{ color: sidebarConfig.headingColor, borderBottomColor: currentTheme.vars.accent }}
+                        style={{ color: sidebarConfig.headingColor, borderBottomColor: sidebarConfig.iconColor }}
                       >
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: currentTheme.vars.accent }}></span>
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: sidebarConfig.iconColor }}></span>
                         {labels.languages}
                       </h3>
                       <div className="space-y-1">
@@ -583,9 +617,9 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                     <div className={`section-block ${densityStyles.itemSpacing}`}>
                       <h3 
                         className={`section-header ${densityStyles.headingTextSize} font-bold uppercase tracking-wider flex items-center gap-1.5`}
-                        style={{ color: sidebarConfig.headingColor, borderBottomColor: currentTheme.vars.accent }}
+                        style={{ color: sidebarConfig.headingColor, borderBottomColor: sidebarConfig.iconColor }}
                       >
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: currentTheme.vars.accent }}></span>
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: sidebarConfig.iconColor }}></span>
                         {labels.certifications}
                       </h3>
                       <div className="space-y-1.5">
@@ -595,7 +629,7 @@ export const A4ResumePreview: React.FC<A4ResumePreviewProps> = ({
                               {cert.name}
                             </div>
                             <div className="text-[6.8pt] leading-tight mt-0.5" style={{ color: sidebarConfig.textMuted }}>
-                              {cert.detail} {cert.year && <span className="font-bold" style={{ color: currentTheme.vars.accent }}>| {cert.year}</span>}
+                              {cert.detail} {cert.year && <span className="font-bold" style={{ color: sidebarConfig.iconColor }}>| {cert.year}</span>}
                             </div>
                           </div>
                         ))}

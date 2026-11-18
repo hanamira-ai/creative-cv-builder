@@ -28,18 +28,19 @@ import {
   RotateCcw,
   Globe
 } from 'lucide-react';
-import { sampleGuruhWicaksonoCV } from './sampleData';
-import { validateCVJson } from './validator';
-import { CVData } from './types';
+import { sampleNeutralCV } from './sampleData';
+import { validateCVJson, normalizeWebsiteUrl } from './validator';
+import { CVData, ContactInfo } from './types';
 import { CV_THEMES } from './themes';
 import { A4ResumePreview } from './components/A4ResumePreview';
 import { generateStandaloneCVHtml } from './templateHtmlGenerator';
-import { ExportEnginePanel } from './components/ExportEnginePanel';
+import { ExportEnginePanel, SHOW_HTML_EXPORT } from './components/ExportEnginePanel';
 import { openInNewTabAndPrint } from './exportPdf';
 import { generateAndDownloadDocx, generateDocxBlob, generateWordHtmlBlob } from './exportDocx';
 import { ProfilePhotoUploader } from './components/ProfilePhotoUploader';
 import { DocumentParserPanel } from './components/DocumentParserPanel';
 import { DocumentUploadCard } from './components/DocumentUploadCard';
+import { ContactEditorCard } from './components/ContactEditorCard';
 import { LayoutPageMode, SpacingDensity } from './paginationUtils';
 
 export default function App() {
@@ -50,13 +51,15 @@ export default function App() {
   const [layoutMode, setLayoutMode] = useState<LayoutPageMode>('auto');
   const [spacingDensity, setSpacingDensity] = useState<SpacingDensity>('normal');
   const [zoomLevel, setZoomLevel] = useState<number>(0.92);
-  const [jsonInput, setJsonInput] = useState<string>(JSON.stringify(sampleGuruhWicaksonoCV, null, 2));
+  const [jsonInput, setJsonInput] = useState<string>(JSON.stringify(sampleNeutralCV, null, 2));
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [copiedJson, setCopiedJson] = useState<boolean>(false);
   const [isQuickExportingPdf, setIsQuickExportingPdf] = useState<boolean>(false);
   const [isQuickExportingDocx, setIsQuickExportingDocx] = useState<boolean>(false);
+  const [isLoadingGuruhSample, setIsLoadingGuruhSample] = useState<boolean>(false);
   const [lastGeneratedTimestamp, setLastGeneratedTimestamp] = useState<string | null>(null);
   const [showGeneratedSuccessAlert, setShowGeneratedSuccessAlert] = useState<boolean>(false);
+  const [contactSyncRevision, setContactSyncRevision] = useState<number>(0);
 
   const currentTheme = CV_THEMES[selectedThemeId] || CV_THEMES['navy-gold'];
 
@@ -65,13 +68,22 @@ export default function App() {
     try {
       const parsed = JSON.parse(jsonInput);
       const res = validateCVJson(parsed);
+      const hasStructuralContact = Boolean(
+        parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        parsed.personal_info &&
+        typeof parsed.personal_info === 'object' &&
+        parsed.personal_info.contact &&
+        typeof parsed.personal_info.contact === 'object'
+      );
       return {
-        currentCVData: res.isValid ? (parsed as CVData) : sampleGuruhWicaksonoCV,
+        currentCVData: (res.isValid || hasStructuralContact) ? (parsed as CVData) : sampleNeutralCV,
         validationResult: res
       };
     } catch {
       return {
-        currentCVData: sampleGuruhWicaksonoCV,
+        currentCVData: sampleNeutralCV,
         validationResult: { isValid: false, errors: ['Format JSON tidak valid.'], warnings: [] }
       };
     }
@@ -188,25 +200,72 @@ export default function App() {
     }
   };
 
+  const handleContactChange = (updatedContact: ContactInfo) => {
+    try {
+      const parsed = JSON.parse(jsonInput);
+      parsed.personal_info = {
+        ...parsed.personal_info,
+        contact: updatedContact,
+      };
+      setJsonInput(JSON.stringify(parsed, null, 2));
+    } catch {
+      const updated = {
+        ...currentCVData,
+        personal_info: {
+          ...currentCVData.personal_info,
+          contact: updatedContact,
+        },
+      };
+      setJsonInput(JSON.stringify(updated, null, 2));
+    }
+  };
+
   const handleCVGenerated = (generatedData: CVData) => {
     // Pertahankan foto profil kustom yang sudah diunggah jika CV hasil generate belum memilikinya
     const currentPhoto = currentCVData.personal_info.profile_picture_placeholder;
+    const websiteCheck = normalizeWebsiteUrl(generatedData.personal_info?.contact?.website);
+    const sanitizedWebsite = websiteCheck.isValid ? websiteCheck.normalizedUrl : '';
+
     const finalData: CVData = {
       ...generatedData,
       personal_info: {
         ...generatedData.personal_info,
-        profile_picture_placeholder: generatedData.personal_info.profile_picture_placeholder || currentPhoto || ''
+        profile_picture_placeholder: generatedData.personal_info.profile_picture_placeholder || currentPhoto || '',
+        contact: {
+          ...(generatedData.personal_info?.contact || {
+            phone: '',
+            email: '',
+            address: '',
+            linkedin: '',
+            github: ''
+          }),
+          website: sanitizedWebsite
+        }
       }
     };
     setJsonInput(JSON.stringify(finalData, null, 2));
+    setContactSyncRevision((prev) => prev + 1);
     setLastGeneratedTimestamp(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     setShowGeneratedSuccessAlert(true);
     setActiveTab('preview');
   };
 
   const handleResetToSample = () => {
-    setJsonInput(JSON.stringify(sampleGuruhWicaksonoCV, null, 2));
+    setJsonInput(JSON.stringify(sampleNeutralCV, null, 2));
+    setContactSyncRevision((prev) => prev + 1);
     setShowGeneratedSuccessAlert(false);
+  };
+
+  const handleLoadGuruhSample = async () => {
+    try {
+      setIsLoadingGuruhSample(true);
+      const { sampleGuruhWicaksonoCV } = await import('./sampleDataGuruh');
+      setJsonInput(JSON.stringify(sampleGuruhWicaksonoCV, null, 2));
+      setContactSyncRevision((prev) => prev + 1);
+      setShowGeneratedSuccessAlert(false);
+    } finally {
+      setIsLoadingGuruhSample(false);
+    }
   };
 
   return (
@@ -277,14 +336,16 @@ export default function App() {
               <span>{isQuickExportingDocx ? 'Exporting...' : 'Unduh DOCX'}</span>
             </button>
 
-            <button
-              onClick={handleDownloadHtml}
-              className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-semibold text-xs border border-slate-700 transition-all active:scale-95 cursor-pointer"
-              title="Unduh file HTML standalone tunggal"
-            >
-              <Download className="w-4 h-4 text-indigo-400" />
-              <span className="hidden xl:inline">HTML</span>
-            </button>
+            {SHOW_HTML_EXPORT && (
+              <button
+                onClick={handleDownloadHtml}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-semibold text-xs border border-slate-700 transition-all active:scale-95 cursor-pointer"
+                title="Unduh file HTML standalone tunggal"
+              >
+                <Download className="w-4 h-4 text-indigo-400" />
+                <span className="hidden xl:inline">HTML</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -343,18 +404,20 @@ export default function App() {
               <span>Ekspor Engine (Tahap 3)</span>
             </button>
 
-            <button
-              id="tab-btn-htmlcode"
-              onClick={() => setActiveTab('htmlcode')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'htmlcode'
-                  ? 'bg-amber-500 text-slate-950 shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Code2 className="w-3.5 h-3.5" />
-              <span>Kode HTML5/CSS3</span>
-            </button>
+            {SHOW_HTML_EXPORT && (
+              <button
+                id="tab-btn-htmlcode"
+                onClick={() => setActiveTab('htmlcode')}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'htmlcode'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Code2 className="w-3.5 h-3.5" />
+                <span>Kode HTML5/CSS3</span>
+              </button>
+            )}
 
             <button
               id="tab-btn-schema"
@@ -383,29 +446,39 @@ export default function App() {
             </button>
           </div>
 
-          {/* Theme Selector (3 Theme Options) */}
-          <div className="flex items-center gap-2">
+          {/* Theme Selector (7 Theme Options) */}
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
               <Palette className="w-3.5 h-3.5 text-amber-400" />
               Pilihan Tema:
             </span>
-            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
               {Object.values(CV_THEMES).map((theme) => {
                 const isSelected = selectedThemeId === theme.id;
                 return (
                   <button
                     key={theme.id}
+                    type="button"
                     onClick={() => setSelectedThemeId(theme.id)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    title={theme.name}
+                    aria-label={theme.name}
+                    aria-pressed={isSelected}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                       isSelected 
                         ? 'bg-slate-800 text-white border border-slate-700 shadow-sm' 
                         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
                     }`}
                   >
-                    <span 
-                      className="w-3 h-3 rounded-full border border-white/20 shrink-0"
-                      style={{ backgroundColor: theme.vars.accent }}
-                    ></span>
+                    <span className="inline-flex items-center gap-0.5 shrink-0" aria-hidden="true">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full border border-white/25"
+                        style={{ backgroundColor: theme.vars.primary }}
+                      ></span>
+                      <span
+                        className="w-2.5 h-2.5 rounded-full border border-white/25"
+                        style={{ backgroundColor: theme.vars.accent }}
+                      ></span>
+                    </span>
                     <span className="hidden sm:inline">{theme.name.split(' (')[0]}</span>
                     <span className="sm:hidden">{theme.name.split(' & ')[0]}</span>
                   </button>
@@ -657,7 +730,7 @@ export default function App() {
                 <button
                   onClick={handleResetToSample}
                   className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-300 rounded-lg text-xs font-semibold border border-slate-700 transition-colors cursor-pointer flex items-center gap-1"
-                  title="Kembalikan ke data contoh Guruh Wicaksono"
+                  title="Kembalikan ke data contoh netral"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Reset ke Contoh</span>
@@ -698,7 +771,28 @@ export default function App() {
               </span>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleLoadGuruhSample}
+                disabled={isLoadingGuruhSample}
+                className="text-xs text-slate-300 hover:text-white font-semibold flex items-center gap-1.5 cursor-pointer bg-slate-800/80 hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 transition-all disabled:opacity-60"
+                title="Muat data contoh CV Guruh Wicaksono"
+              >
+                <FileText className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{isLoadingGuruhSample ? 'Memuat...' : 'Muat contoh Guruh'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResetToSample}
+                className="text-xs text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-1 cursor-pointer px-2.5 py-1.5 rounded-xl hover:bg-slate-800/60 transition-all"
+                title="Kembalikan ke data contoh netral"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Contoh Netral</span>
+              </button>
+
               <button
                 onClick={() => {
                   const el = document.getElementById('document-upload-section');
@@ -727,6 +821,15 @@ export default function App() {
               candidateName={currentCVData.personal_info.name}
               onPhotoUploaded={handlePhotoUploaded}
               onPhotoRemoved={handlePhotoRemoved}
+            />
+          </div>
+
+          {/* Contact & Links Live Editor */}
+          <div className="no-print">
+            <ContactEditorCard
+              contact={currentCVData.personal_info.contact}
+              onChangeContact={handleContactChange}
+              syncRevision={contactSyncRevision}
             />
           </div>
 
@@ -832,7 +935,7 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <FileJson className="w-4 h-4 text-cyan-400" />
                 <span className="text-xs font-bold text-slate-200">
-                  Data JSON Ekstraksi (Guruh Wicaksono)
+                  Data JSON CV ({currentCVData.personal_info?.name || 'Kandidat'})
                 </span>
               </div>
               <button

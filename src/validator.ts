@@ -1,5 +1,105 @@
 import { CVData, ValidationResult } from './types';
 
+export interface WebsiteValidationResult {
+  isValid: boolean;
+  normalizedUrl: string;
+  error?: string;
+}
+
+/**
+ * Menormalisasi dan memvalidasi URL website pribadi.
+ * - Kosong -> valid dengan string kosong (tidak dirender)
+ * - Hanya mengizinkan protokol http:// atau https://
+ * - Menolak javascript:, data:, vbscript:, ftp://, atau skema berbahaya lainnya
+ * - Jika tanpa protokol (mis. "namaanda.com"), otomatis menambahkan "https://"
+ */
+export function normalizeWebsiteUrl(rawUrl?: string | null): WebsiteValidationResult {
+  if (rawUrl === undefined || rawUrl === null) {
+    return { isValid: true, normalizedUrl: '' };
+  }
+
+  // Hapus karakter kontrol tersembunyi sebelum trim
+  const cleaned = String(rawUrl).replace(/[\u0000-\u001F\u007F]/g, '').trim();
+  if (!cleaned) {
+    return { isValid: true, normalizedUrl: '' };
+  }
+
+  // Tolak eksplisit skema berbahaya
+  if (/^(javascript|data|vbscript|file|about|blob|mailto|tel):/i.test(cleaned)) {
+    return {
+      isValid: false,
+      normalizedUrl: '',
+      error: 'Protokol URL tidak diizinkan. Gunakan http:// atau https://.'
+    };
+  }
+
+  let candidate = cleaned;
+
+  if (/^https?:\/\//i.test(candidate)) {
+    candidate = candidate.replace(/^http:\/\//i, 'http://').replace(/^https:\/\//i, 'https://');
+  } else if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(candidate)) {
+    return {
+      isValid: false,
+      normalizedUrl: '',
+      error: 'URL hanya boleh menggunakan protokol http:// atau https://.'
+    };
+  } else if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(candidate) && !/^[a-zA-Z0-9.-]+:\d+(\/|$|\?|#)/.test(candidate)) {
+    return {
+      isValid: false,
+      normalizedUrl: '',
+      error: 'Format URL tidak valid. Gunakan protokol http:// atau https://.'
+    };
+  } else {
+    candidate = `https://${candidate}`;
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return {
+        isValid: false,
+        normalizedUrl: '',
+        error: 'URL hanya boleh menggunakan protokol http:// atau https://.'
+      };
+    }
+
+    const host = parsed.hostname;
+    const isLocalhost = host.toLowerCase() === 'localhost';
+    const hasValidDomain =
+      host.includes('.') &&
+      !host.startsWith('.') &&
+      !host.endsWith('.') &&
+      !host.includes('..') &&
+      host.split('.').pop()!.length >= 2;
+
+    if (!host || (!isLocalhost && !hasValidDomain) || /\s/.test(candidate)) {
+      return {
+        isValid: false,
+        normalizedUrl: '',
+        error: 'Format URL tidak valid (contoh: https://namaanda.com).'
+      };
+    }
+
+    return {
+      isValid: true,
+      normalizedUrl: candidate
+    };
+  } catch {
+    return {
+      isValid: false,
+      normalizedUrl: '',
+      error: 'Format URL tidak valid (contoh: https://namaanda.com).'
+    };
+  }
+}
+
+/**
+ * Mengubah URL lengkap menjadi teks tampilan singkat tanpa https:// dan tanpa trailing slash.
+ */
+export function formatWebsiteDisplay(url: string): string {
+  return (url || '').replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+}
+
 /**
  * Memvalidasi apakah objek JSON hasil ekstraksi LLM memenuhi skema standar CV
  * sebelum dikirim ke komponen rendering UI.
@@ -45,6 +145,16 @@ export function validateCVJson(data: any): ValidationResult {
       }
       if (!p.contact.address || typeof p.contact.address !== 'string') {
         warnings.push("personal_info.contact.address disarankan diisi.");
+      }
+      if (p.contact.website !== undefined && p.contact.website !== null) {
+        if (typeof p.contact.website !== 'string') {
+          warnings.push("personal_info.contact.website harus berupa string URL.");
+        } else if (p.contact.website.trim()) {
+          const websiteCheck = normalizeWebsiteUrl(p.contact.website);
+          if (!websiteCheck.isValid) {
+            warnings.push(`personal_info.contact.website: ${websiteCheck.error}`);
+          }
+        }
       }
     }
   }

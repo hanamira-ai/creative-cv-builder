@@ -10,10 +10,12 @@ import {
   BorderStyle,
   AlignmentType,
   TableBorders,
+  ExternalHyperlink,
 } from 'docx';
 import { saveAs } from 'file-saver';
 import { CVData } from './types';
 import { CV_THEMES } from './themes';
+import { normalizeWebsiteUrl, formatWebsiteDisplay } from './validator';
 
 /**
  * ============================================================================
@@ -56,6 +58,7 @@ export function generateDocxHTML(
   const sidebarText = sidebarConfig.textMain;
   const sidebarMuted = sidebarConfig.textMuted;
   const sidebarHeading = sidebarConfig.headingColor;
+  const sidebarAccent = sidebarConfig.iconColor || accentColor;
 
   const isEn = data.language === 'en';
   const labels = {
@@ -104,7 +107,7 @@ export function generateDocxHTML(
         : (stack.tool ? `${esc(stack.tool)}${stack.description ? ` (${esc(stack.description)})` : ''}` : '');
       return `
       <div style="margin-bottom:6px;">
-        <div style="font-size:8.5pt; font-weight:bold; color:${accentColor}; margin-bottom:1px;">${esc(cat)}:</div>
+        <div style="font-size:8.5pt; font-weight:bold; color:${sidebarAccent}; margin-bottom:1px;">${esc(cat)}:</div>
         <div style="font-size:8pt; color:${sidebarMuted}; line-height:1.35;">${items}</div>
       </div>
     `;
@@ -253,6 +256,11 @@ export function generateDocxHTML(
     `
       : '';
 
+  const websiteCheckHtml = normalizeWebsiteUrl(data.personal_info.contact.website);
+  const websiteContactHtml = (websiteCheckHtml.isValid && websiteCheckHtml.normalizedUrl)
+    ? `<div style="word-break:break-word;"><strong style="color:${sidebarText};">Website:</strong> <a href="${esc(websiteCheckHtml.normalizedUrl)}" target="_blank" rel="noopener noreferrer" style="color:${sidebarMuted}; text-decoration:none;">${esc(formatWebsiteDisplay(websiteCheckHtml.normalizedUrl))}</a></div>`
+    : '';
+
   // Return Full HTML document dengan XML namespace Word
   return `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -324,7 +332,7 @@ export function generateDocxHTML(
       letter-spacing: 0.8px;
       margin-top: 14px;
       margin-bottom: 6px;
-      border-bottom: 1px solid ${accentColor};
+      border-bottom: 1px solid ${sidebarAccent};
       padding-bottom: 3px;
     }
     .main-heading {
@@ -356,7 +364,7 @@ export function generateDocxHTML(
             <div style="font-size:11.5pt; font-weight:bold; color:${sidebarHeading}; margin-top:8px; line-height:1.2;">
               ${esc(data.personal_info.name)}
             </div>
-            <div style="font-size:8pt; color:${accentColor}; font-weight:600; margin-top:2px;">
+            <div style="font-size:8pt; color:${sidebarAccent}; font-weight:600; margin-top:2px;">
               ${esc(data.personal_info.title)}
             </div>
           </div>
@@ -369,6 +377,7 @@ export function generateDocxHTML(
             ${data.personal_info.contact.address ? `<div><strong style="color:${sidebarText};">${labels.location}:</strong> ${esc(data.personal_info.contact.address)}</div>` : ''}
             ${data.personal_info.contact.linkedin ? `<div><strong style="color:${sidebarText};">LinkedIn:</strong> ${esc(data.personal_info.contact.linkedin)}</div>` : ''}
             ${data.personal_info.contact.github ? `<div><strong style="color:${sidebarText};">GitHub:</strong> ${esc(data.personal_info.contact.github)}</div>` : ''}
+            ${websiteContactHtml}
           </div>
 
           <!-- KEAHLIAN INTI -->
@@ -485,6 +494,23 @@ const DEFAULT_PARAGRAPH_SPACING = { line: 276, before: 120, after: 120 };
 const SECTION_HEADING_SPACING = { line: 276, before: 240, after: 80 };
 const LIST_ITEM_SPACING = { line: 276, before: 40, after: 40 };
 
+function toDocxHex(color: string | undefined, fallbackHex: string): string {
+  const cleanFallback = fallbackHex.replace(/^#/, '').toUpperCase();
+  if (!color || typeof color !== 'string') return cleanFallback;
+  const trimmed = color.trim().replace(/^#/, '');
+  if (/^[0-9a-fA-F]{6}$/.test(trimmed)) {
+    return trimmed.toUpperCase();
+  }
+  if (/^[0-9a-fA-F]{3}$/.test(trimmed)) {
+    return trimmed
+      .split('')
+      .map((ch) => ch + ch)
+      .join('')
+      .toUpperCase();
+  }
+  return cleanFallback;
+}
+
 export function buildDocxDocument(
   data: CVData,
   themeId: string = 'navy-gold',
@@ -492,13 +518,25 @@ export function buildDocxDocument(
   badgeTheme: 'light' | 'dark' = 'dark'
 ): Document {
   const currentTheme = CV_THEMES[themeId] || CV_THEMES['navy-gold'];
+  const activeSidebarMode: 'light' | 'dark' = sidebarTheme === 'light' ? 'light' : 'dark';
+  const sidebarConfig = currentTheme.sidebar?.[activeSidebarMode];
 
-  // Warna Hex tema (tanpa '#')
-  const primaryHex = (currentTheme.vars.primary || '#182634').replace('#', '');
-  const accentHex = (currentTheme.vars.accent || '#C08A3E').replace('#', '');
-  const sidebarBgHex = (sidebarTheme === 'light' ? '#F4F6F8' : '#182634').replace('#', '');
-  const sidebarTextHex = sidebarTheme === 'light' ? '1E293B' : 'FFFFFF';
-  const sidebarMutedHex = sidebarTheme === 'light' ? '64748B' : 'CBD5E1';
+  // Warna Hex tema (tanpa '#') dengan fallback aman jika bukan heksadesimal 6 digit
+  const primaryHex = toDocxHex(currentTheme.vars.primary, '182634');
+  const accentHex = toDocxHex(currentTheme.vars.accent, 'C08A3E');
+  const sidebarBgHex = toDocxHex(
+    sidebarConfig?.bgSidebar,
+    activeSidebarMode === 'light' ? 'F4F6F8' : '182634'
+  );
+  const sidebarTextHex = toDocxHex(
+    sidebarConfig?.textMain,
+    activeSidebarMode === 'light' ? '1E293B' : 'FFFFFF'
+  );
+  const sidebarMutedHex = toDocxHex(
+    sidebarConfig?.textMuted,
+    activeSidebarMode === 'light' ? '64748B' : 'CBD5E1'
+  );
+  const sidebarAccentHex = toDocxHex(sidebarConfig?.iconColor, accentHex);
 
   const isEn = data.language === 'en';
   const labels = {
@@ -521,7 +559,7 @@ export function buildDocxDocument(
 
   // --------------------------------------------------------------------------
   // CELL 1: SIDEBAR ELEMENTS (Width 32% / 3,447 DXA)
-  // Shading: #F4F6F8 (light) atau #182634 (dark)
+  // Shading diambil dari sidebarConfig.bgSidebar tema aktif
   // --------------------------------------------------------------------------
   const sidebarElements: Paragraph[] = [
     // Avatar Initial Placeholder
@@ -533,7 +571,7 @@ export function buildDocxDocument(
           text: `[ ${candidateName.charAt(0)} ]`,
           bold: true,
           size: 36,
-          color: accentHex,
+          color: sidebarAccentHex,
           font: FONT_FAMILY,
         }),
       ],
@@ -559,7 +597,7 @@ export function buildDocxDocument(
           text: data.personal_info.title,
           size: 16,
           bold: true,
-          color: accentHex,
+          color: sidebarAccentHex,
           font: FONT_FAMILY,
         }),
       ],
@@ -573,7 +611,7 @@ export function buildDocxDocument(
           text: labels.contact,
           bold: true,
           size: 18,
-          color: accentHex,
+          color: sidebarAccentHex,
           font: FONT_FAMILY,
         }),
       ],
@@ -640,6 +678,29 @@ export function buildDocxDocument(
     );
   }
 
+  const websiteCheckDocx = normalizeWebsiteUrl(data.personal_info.contact.website);
+  if (websiteCheckDocx.isValid && websiteCheckDocx.normalizedUrl) {
+    sidebarElements.push(
+      new Paragraph({
+        spacing: LIST_ITEM_SPACING,
+        children: [
+          new TextRun({ text: 'Website: ', bold: true, size: 15, color: sidebarTextHex, font: FONT_FAMILY }),
+          new ExternalHyperlink({
+            link: websiteCheckDocx.normalizedUrl,
+            children: [
+              new TextRun({
+                text: formatWebsiteDisplay(websiteCheckDocx.normalizedUrl),
+                size: 15,
+                color: sidebarMutedHex,
+                font: FONT_FAMILY,
+              }),
+            ],
+          }),
+        ],
+      })
+    );
+  }
+
   // SECTION: KEAHLIAN INTI
   if (data.core_skills && data.core_skills.length > 0) {
     sidebarElements.push(
@@ -650,7 +711,7 @@ export function buildDocxDocument(
             text: labels.coreSkills,
             bold: true,
             size: 18,
-            color: accentHex,
+            color: sidebarAccentHex,
             font: FONT_FAMILY,
           }),
         ],
@@ -664,7 +725,7 @@ export function buildDocxDocument(
         new Paragraph({
           spacing: LIST_ITEM_SPACING,
           children: [
-            new TextRun({ text: '• ', bold: true, size: 15, color: accentHex, font: FONT_FAMILY }),
+            new TextRun({ text: '• ', bold: true, size: 15, color: sidebarAccentHex, font: FONT_FAMILY }),
             new TextRun({ text: `${sName}${sLevel}`, size: 15, color: sidebarTextHex, font: FONT_FAMILY }),
           ],
         })
@@ -682,7 +743,7 @@ export function buildDocxDocument(
             text: labels.techStack,
             bold: true,
             size: 18,
-            color: accentHex,
+            color: sidebarAccentHex,
             font: FONT_FAMILY,
           }),
         ],
@@ -699,7 +760,7 @@ export function buildDocxDocument(
         new Paragraph({
           spacing: LIST_ITEM_SPACING,
           children: [
-            new TextRun({ text: `${cat}: `, bold: true, size: 14, color: accentHex, font: FONT_FAMILY }),
+            new TextRun({ text: `${cat}: `, bold: true, size: 14, color: sidebarAccentHex, font: FONT_FAMILY }),
             new TextRun({ text: items, size: 14, color: sidebarMutedHex, font: FONT_FAMILY }),
           ],
         })
@@ -717,7 +778,7 @@ export function buildDocxDocument(
             text: labels.languages,
             bold: true,
             size: 18,
-            color: accentHex,
+            color: sidebarAccentHex,
             font: FONT_FAMILY,
           }),
         ],
@@ -749,7 +810,7 @@ export function buildDocxDocument(
             text: labels.certifications,
             bold: true,
             size: 18,
-            color: accentHex,
+            color: sidebarAccentHex,
             font: FONT_FAMILY,
           }),
         ],

@@ -284,7 +284,7 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 
 app.post('/api/export/pdf', async (req, res) => {
-  const { htmlContent, filename = 'CV_Guruh_Wicaksono.pdf' } = req.body;
+  const { htmlContent, filename = 'CV_Curriculum_Vitae.pdf' } = req.body;
   
   let browser = null;
   try {

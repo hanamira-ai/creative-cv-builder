@@ -1,5 +1,6 @@
 import { CVData } from './types';
 import { CV_THEMES, CVTheme } from './themes';
+import { normalizeWebsiteUrl, formatWebsiteDisplay } from './validator';
 
 export function generateStandaloneCVHtml(
   data: CVData, 
@@ -146,6 +147,17 @@ export function generateStandaloneCVHtml(
   const photoHtml = data.personal_info.profile_picture_placeholder 
     ? `<img src="${escapeHtml(data.personal_info.profile_picture_placeholder)}" alt="${escapeHtml(data.personal_info.name)}" class="profile-photo" />`
     : `<div class="profile-photo-avatar">${data.personal_info.name.charAt(0)}</div>`;
+
+  const websiteCheck = normalizeWebsiteUrl(data.personal_info.contact.website);
+  const websiteRowHtml = (websiteCheck.isValid && websiteCheck.normalizedUrl)
+    ? `
+            <div class="contact-row">
+              <span class="contact-icon" style="display:inline-flex;align-items:center;margin-top:2px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+              </span>
+              <a href="${escapeHtml(websiteCheck.normalizedUrl)}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none; font-family: monospace; font-size: 7.5pt; word-break: break-word;">${escapeHtml(formatWebsiteDisplay(websiteCheck.normalizedUrl))}</a>
+            </div>`
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="id">
@@ -986,6 +998,7 @@ export function generateStandaloneCVHtml(
               <span class="contact-icon">⌨</span>
               <span>${escapeHtml(data.personal_info.contact.github.replace('https://', ''))}</span>
             </div>` : ''}
+          ${websiteRowHtml}
         </div>
       </section>
 
